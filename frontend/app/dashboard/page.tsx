@@ -393,6 +393,17 @@ function LeadCard({
                   >
                     Edit
                   </button>
+                  <button
+                    className="btn-ghost text-slate-500"
+                    disabled={busy}
+                    onClick={() =>
+                      act(() =>
+                        api.post(`/api/responses/${lead.response!.id}/reject`),
+                      )
+                    }
+                  >
+                    Don&apos;t post
+                  </button>
                 </>
               )}
             </div>
