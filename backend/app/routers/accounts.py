@@ -1,4 +1,18 @@
-"""Connected social accounts (connection wizard)."""
+"""Connected social accounts (connection wizard).
+
+Three connection methods, none of which require a client to hand over a password:
+
+- ``oauth`` — the client authorizes us through the platform's official flow; we
+  store the returned token (encrypted), never a password. Recommended.
+- ``managed_business_page`` — for clients who don't want to connect anything
+  personal: LeadPilot provisions and operates a dedicated Business Page for the
+  business. No credentials are involved; the account starts in ``provisioning``
+  until the team finishes setup.
+- ``session`` — advanced/discouraged: a captured session token, encrypted at rest.
+
+We never fabricate fake personal/neighbor accounts — that violates platform
+terms and gets accounts banned (see docs/COMPLIANCE.md).
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,10 +22,28 @@ from sqlalchemy.orm import Session
 from ..crypto import encrypt
 from ..database import get_db
 from ..deps import get_current_user, record_audit
-from ..models import ConnectedAccount, ConnectionHealth, User
+from ..models import AccountAuthMethod, ConnectedAccount, ConnectionHealth, User
 from ..schemas import ConnectAccountRequest, ConnectedAccountOut
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
+
+
+def _apply_method(account: ConnectedAccount, payload: ConnectAccountRequest) -> None:
+    account.auth_method = payload.auth_method
+    account.display_name = payload.display_name or account.display_name
+
+    if payload.auth_method == AccountAuthMethod.managed_business_page:
+        # No client credentials; we set the page up for them.
+        account.encrypted_session = None
+        account.health = ConnectionHealth.provisioning
+    elif payload.auth_method == AccountAuthMethod.oauth:
+        # Real OAuth returns a token; the scaffold simulates a successful
+        # authorization so no password is ever requested or stored.
+        account.encrypted_session = encrypt(payload.credential or "oauth-authorized")
+        account.health = ConnectionHealth.healthy
+    else:  # session (advanced)
+        account.encrypted_session = encrypt(payload.credential)
+        account.health = ConnectionHealth.healthy
 
 
 @router.get("", response_model=list[ConnectedAccountOut])
@@ -32,29 +64,19 @@ def connect_account(
             ConnectedAccount.provider == payload.provider,
         )
     ).scalar_one_or_none()
-    if existing:
-        existing.display_name = payload.display_name or existing.display_name
-        existing.encrypted_session = encrypt(payload.credential)
-        existing.health = ConnectionHealth.healthy
-        db.commit()
-        db.refresh(existing)
-        return existing
-
-    account = ConnectedAccount(
-        user_id=user.id,
-        provider=payload.provider,
-        display_name=payload.display_name,
-        encrypted_session=encrypt(payload.credential),
-        health=ConnectionHealth.healthy,
+    account = existing or ConnectedAccount(
+        user_id=user.id, provider=payload.provider
     )
-    db.add(account)
+    _apply_method(account, payload)
+    if not existing:
+        db.add(account)
     db.commit()
     db.refresh(account)
     record_audit(
         db,
         "account.connect",
         user_id=user.id,
-        detail=payload.provider.value,
+        detail=f"{payload.provider.value} via {payload.auth_method.value}",
         request=request,
     )
     return account

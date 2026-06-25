@@ -28,6 +28,25 @@ is to get your customers' accounts banned in week one.
 | "Bypassing city restrictions" + randomized pacing to dodge detection | Detection evasion | Don't build ban-evasion. Operate within platform rules |
 | Automated mass cold outreach | CAN-SPAM / platform spam policies | Opt-in only; rate-limited; clear identification + opt-out |
 
+## Connecting accounts (no passwords, no fake accounts)
+
+Clients connect via one of three methods (`backend/app/routers/accounts.py`):
+
+- **OAuth (recommended)** — the client authorizes LeadPilot through the
+  platform's official flow. We store the returned token (AES-256 encrypted),
+  **never a password.**
+- **Managed Business Page** — for clients who don't want to connect anything
+  personal, LeadPilot provisions and operates a dedicated **Business Page** for
+  their business (a real business identity they own). No credentials change
+  hands; the account sits in `provisioning` until the team activates it.
+- **Session token (advanced, discouraged)** — a captured token, encrypted at
+  rest. Avoid for personal accounts.
+
+**We never fabricate fake personal or "neighbor" accounts.** Platforms verify
+real identity/address; fabricated accounts are astroturfing — they get banned
+and create legal exposure. The managed **Business Page** is the legitimate way
+to give a client a presence without them sharing a login.
+
 ## How the architecture keeps you flexible
 
 Connectors implement a single interface (`connectors/base.py`):

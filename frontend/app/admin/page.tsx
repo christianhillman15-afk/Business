@@ -36,6 +36,13 @@ interface Recruit {
   message_sent: boolean;
   trial_signup_at: string | null;
 }
+interface Provisioning {
+  id: number;
+  provider: string;
+  business_name: string | null;
+  email: string;
+  health: string;
+}
 
 export default function AdminPage() {
   const { user, loading, logout } = useAuth();
@@ -44,6 +51,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [recruits, setRecruits] = useState<Recruit[]>([]);
+  const [provisioning, setProvisioning] = useState<Provisioning[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -51,6 +59,10 @@ export default function AdminPage() {
     api.get<AdminUser[]>("/api/admin/users").then(setUsers).catch(() => {});
     api.get<AuditEntry[]>("/api/admin/audit?limit=15").then(setAudit).catch(() => {});
     api.get<Recruit[]>("/api/admin/recruits").then(setRecruits).catch(() => {});
+    api
+      .get<Provisioning[]>("/api/admin/provisioning")
+      .then(setProvisioning)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -66,6 +78,16 @@ export default function AdminPage() {
     setBusy(key);
     try {
       await api.post(path);
+      load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function activate(id: number) {
+    setBusy(`activate-${id}`);
+    try {
+      await api.post(`/api/admin/accounts/${id}/activate`);
       load();
     } finally {
       setBusy(null);
@@ -148,6 +170,46 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold">
+          Managed Business Page setups{" "}
+          <span className="text-sm font-normal text-slate-400">
+            ({provisioning.length} pending)
+          </span>
+        </h2>
+        {provisioning.length === 0 ? (
+          <div className="card text-sm text-slate-500">
+            No pending setups. When a client picks “Set up a Business Page for
+            me,” it appears here for the team to provision and activate.
+          </div>
+        ) : (
+          <div className="card space-y-2 text-sm">
+            {provisioning.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between border-b border-slate-100 py-2 last:border-0"
+              >
+                <div>
+                  <span className="font-medium text-slate-700">
+                    {p.business_name || p.email}
+                  </span>{" "}
+                  <span className="text-slate-400">
+                    · {p.provider} · {p.email}
+                  </span>
+                </div>
+                <button
+                  className="btn-primary"
+                  disabled={busy === `activate-${p.id}`}
+                  onClick={() => activate(p.id)}
+                >
+                  {busy === `activate-${p.id}` ? "Activating…" : "Mark live"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mb-8">

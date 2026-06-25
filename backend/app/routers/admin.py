@@ -10,16 +10,24 @@ from ..deps import require_admin
 from ..models import (
     AgentResponse,
     AuditLog,
+    ConnectedAccount,
+    ConnectionHealth,
     LeadMatch,
     OutreachRecruit,
     ResponseStatus,
+    SubscriptionStatus,
     SupportTicket,
     TicketStatus,
     User,
     UserRole,
 )
-from ..models import SubscriptionStatus
-from ..schemas import AdminUserOut, AuditLogOut, RecruitOut, TicketOut
+from ..schemas import (
+    AdminUserOut,
+    AuditLogOut,
+    ManagedAccountOut,
+    RecruitOut,
+    TicketOut,
+)
 from ..services import run_recruiting
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -81,6 +89,56 @@ def audit_log(
 ):
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
     return db.execute(stmt).scalars().all()
+
+
+@router.get("/provisioning", response_model=list[ManagedAccountOut])
+def list_provisioning(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    """Managed Business Page setups awaiting the team to finish provisioning."""
+    rows = db.execute(
+        select(ConnectedAccount, User)
+        .join(User, ConnectedAccount.user_id == User.id)
+        .where(ConnectedAccount.health == ConnectionHealth.provisioning)
+        .order_by(ConnectedAccount.connected_at.desc())
+    ).all()
+    return [
+        ManagedAccountOut(
+            id=acc.id,
+            provider=acc.provider,
+            auth_method=acc.auth_method,
+            health=acc.health,
+            business_name=u.business_name,
+            email=u.email,
+            connected_at=acc.connected_at,
+        )
+        for acc, u in rows
+    ]
+
+
+@router.post("/accounts/{account_id}/activate", response_model=ManagedAccountOut)
+def activate_managed_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Mark a managed Business Page as live once the team has set it up."""
+    acc = db.get(ConnectedAccount, account_id)
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    acc.health = ConnectionHealth.healthy
+    db.commit()
+    db.refresh(acc)
+    u = db.get(User, acc.user_id)
+    return ManagedAccountOut(
+        id=acc.id,
+        provider=acc.provider,
+        auth_method=acc.auth_method,
+        health=acc.health,
+        business_name=u.business_name if u else None,
+        email=u.email if u else "",
+        connected_at=acc.connected_at,
+    )
 
 
 @router.get("/recruits", response_model=list[RecruitOut])

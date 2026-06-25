@@ -44,6 +44,17 @@ class ConnectionHealth(str, enum.Enum):
     healthy = "healthy"
     needs_reauth = "needs_reauth"
     disconnected = "disconnected"
+    provisioning = "provisioning"  # managed business page being set up
+
+
+class AccountAuthMethod(str, enum.Enum):
+    # Official authorization flow — the client authorizes us; no password shared.
+    oauth = "oauth"
+    # LeadPilot provisions and operates a dedicated Business Page for the client.
+    # No personal account or credentials are involved.
+    managed_business_page = "managed_business_page"
+    # Advanced: a captured session token (encrypted at rest). Discouraged.
+    session = "session"
 
 
 class LeadStatus(str, enum.Enum):
@@ -138,7 +149,10 @@ class ConnectedAccount(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     provider: Mapped[AccountProvider] = mapped_column(Enum(AccountProvider))
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Encrypted session/credential blob. Stub stores an opaque token only.
+    auth_method: Mapped[AccountAuthMethod] = mapped_column(
+        Enum(AccountAuthMethod), default=AccountAuthMethod.oauth
+    )
+    # Encrypted OAuth token / session blob. None for managed business pages.
     encrypted_session: Mapped[str | None] = mapped_column(Text, nullable=True)
     health: Mapped[ConnectionHealth] = mapped_column(
         Enum(ConnectionHealth), default=ConnectionHealth.healthy

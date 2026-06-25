@@ -118,6 +118,52 @@ def test_admin_stats_and_recruiting(client: TestClient, admin_headers: dict):
     assert len(listing) >= len(recruits)
 
 
+def test_connect_methods_need_no_password(client: TestClient):
+    # A fresh provider connects without ever sending a password/credential.
+    email = f"conn-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    tok = client.post(
+        "/api/auth/register", json={"email": email, "password": "password123"}
+    ).json()["access_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+
+    # OAuth: no credential in the request body.
+    oa = client.post("/api/accounts", headers=h, json={"provider": "facebook", "auth_method": "oauth"})
+    assert oa.status_code == 201
+    assert oa.json()["auth_method"] == "oauth"
+    assert oa.json()["health"] == "healthy"
+
+    # Managed Business Page: no credential, starts provisioning.
+    mg = client.post(
+        "/api/accounts",
+        headers=h,
+        json={"provider": "nextdoor", "auth_method": "managed_business_page"},
+    )
+    assert mg.status_code == 201
+    assert mg.json()["auth_method"] == "managed_business_page"
+    assert mg.json()["health"] == "provisioning"
+
+
+def test_admin_provisioning_and_activate(client: TestClient, admin_headers: dict):
+    # Create a provider with a managed page awaiting setup.
+    email = f"prov-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    tok = client.post(
+        "/api/auth/register", json={"email": email, "password": "password123"}
+    ).json()["access_token"]
+    client.post(
+        "/api/accounts",
+        headers={"Authorization": f"Bearer {tok}"},
+        json={"provider": "nextdoor", "auth_method": "managed_business_page"},
+    )
+    queue = client.get("/api/admin/provisioning", headers=admin_headers).json()
+    mine = [q for q in queue if q["email"] == email]
+    assert mine, "managed page should appear in the provisioning queue"
+    act = client.post(
+        f"/api/admin/accounts/{mine[0]['id']}/activate", headers=admin_headers
+    )
+    assert act.status_code == 200
+    assert act.json()["health"] == "healthy"
+
+
 def test_capabilities(client: TestClient, provider_headers: dict):
     caps = client.get("/api/capabilities", headers=provider_headers).json()
     # Facebook can auto-reply; Nextdoor cannot (no reply API).

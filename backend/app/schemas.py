@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import (
+    AccountAuthMethod,
     AccountProvider,
     BroadcastStatus,
     ConnectionHealth,
@@ -81,15 +82,17 @@ class PlanOut(BaseModel):
 # --- Connected accounts -----------------------------------------------------
 class ConnectAccountRequest(BaseModel):
     provider: AccountProvider
+    auth_method: AccountAuthMethod = AccountAuthMethod.oauth
     display_name: str | None = None
-    # In the real product this is an OAuth code / captured session. The stub
-    # accepts any opaque token to simulate a successful connection.
+    # Only used for the `session` (advanced) method. OAuth/managed need no
+    # credential from the client.
     credential: str | None = None
 
 
 class ConnectedAccountOut(ORMModel):
     id: int
     provider: AccountProvider
+    auth_method: AccountAuthMethod
     display_name: str | None
     health: ConnectionHealth
     connected_at: datetime
@@ -210,3 +213,13 @@ class RecruitOut(ORMModel):
     message_sent: bool
     trial_signup_at: datetime | None
     created_at: datetime
+
+
+class ManagedAccountOut(BaseModel):
+    id: int
+    provider: AccountProvider
+    auth_method: AccountAuthMethod
+    health: ConnectionHealth
+    business_name: str | None
+    email: EmailStr
+    connected_at: datetime

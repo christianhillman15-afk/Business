@@ -114,9 +114,12 @@ export interface PricingProfile {
   target_neighborhoods: string[];
 }
 
+export type AuthMethod = "oauth" | "managed_business_page" | "session";
+
 export interface ConnectedAccount {
   id: number;
   provider: "facebook" | "nextdoor";
+  auth_method: AuthMethod;
   display_name: string | null;
   health: string;
   connected_at: string;

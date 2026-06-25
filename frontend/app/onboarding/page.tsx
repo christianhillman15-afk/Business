@@ -25,11 +25,14 @@ export default function OnboardingPage() {
     );
   }
 
-  async function connect(provider: "facebook" | "nextdoor") {
+  async function connect(
+    provider: "facebook" | "nextdoor",
+    auth_method: "oauth" | "managed_business_page",
+  ) {
     await api.post<ConnectedAccount>("/api/accounts", {
       provider,
+      auth_method,
       display_name: user!.business_name,
-      credential: `demo-connect-${Date.now()}`,
     });
     setAccounts(await api.get<ConnectedAccount[]>("/api/accounts"));
   }
@@ -67,40 +70,68 @@ export default function OnboardingPage() {
         <section className="card">
           <h2 className="mb-1 text-lg font-semibold">1. Connect accounts</h2>
           <p className="mb-4 text-sm text-slate-500">
-            Demo connectors — no real credentials are used. See{" "}
-            <code className="text-xs">docs/COMPLIANCE.md</code>.
+            We never ask for or store your password. Connect with the official
+            authorize button, or have us set up a Business Page for you.
           </p>
           {(["facebook", "nextdoor"] as const).map((p) => {
             const acc = connected(p);
+            const provisioning = acc?.health === "provisioning";
             return (
               <div
                 key={p}
-                className="mb-2 flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                className="mb-3 rounded-lg border border-slate-200 px-3 py-3"
               >
-                <div>
-                  <div className="font-medium capitalize">{p}</div>
-                  <div className="text-xs text-slate-500">
-                    {acc ? (
-                      <span className="text-green-600">
-                        Connected · {acc.health}
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-medium capitalize">{p}</span>
+                  {acc ? (
+                    provisioning ? (
+                      <span className="badge bg-amber-100 text-amber-700">
+                        Setting up your page…
                       </span>
                     ) : (
-                      "Not connected"
-                    )}
-                  </div>
+                      <span className="badge bg-green-100 text-green-700">
+                        Connected ·{" "}
+                        {acc.auth_method === "managed_business_page"
+                          ? "managed page"
+                          : "authorized"}
+                      </span>
+                    )
+                  ) : (
+                    <span className="badge bg-slate-100 text-slate-500">
+                      Not connected
+                    </span>
+                  )}
                 </div>
+
                 {acc ? (
                   <button className="btn-ghost" onClick={() => disconnect(acc.id)}>
-                    Disconnect
+                    {provisioning ? "Cancel request" : "Disconnect"}
                   </button>
                 ) : (
-                  <button className="btn-primary" onClick={() => connect(p)}>
-                    Connect
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn-primary"
+                      onClick={() => connect(p, "oauth")}
+                    >
+                      Connect with {p === "facebook" ? "Facebook" : "Nextdoor"}
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      onClick={() => connect(p, "managed_business_page")}
+                    >
+                      Set up a Business Page for me
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
+          <p className="mt-1 text-xs text-slate-400">
+            “Connect” uses the platform&apos;s official authorization — no
+            password is shared. “Set up a Business Page” means we provision a
+            dedicated page for your business; you don&apos;t connect any personal
+            account.
+          </p>
         </section>
 
         <section className="card">
