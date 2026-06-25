@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:////data/leadpilot.db
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-change-me}
+      CORS_ORIGINS: http://localhost:3000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LEADPILOT_AI_MODEL: ${LEADPILOT_AI_MODEL:-claude-opus-4-8}
+      LEADPILOT_AI_CLASSIFIER_MODEL: ${LEADPILOT_AI_CLASSIFIER_MODEL:-claude-haiku-4-5}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+    volumes:
+      - leadpilot_data:/data
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  leadpilot_data:
