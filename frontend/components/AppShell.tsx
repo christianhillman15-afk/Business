@@ -11,6 +11,7 @@ const NAV = [
   { href: "/onboarding", label: "Setup" },
   { href: "/billing", label: "Billing" },
   { href: "/support", label: "Support" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function AppShell({

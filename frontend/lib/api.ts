@@ -58,6 +58,8 @@ export const api = {
     request<T>(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: <T>(p: string, body?: unknown) =>
     request<T>(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(p: string, body?: unknown) =>
+    request<T>(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(p: string) => request<T>(p, { method: "DELETE" }),
 };
 
@@ -67,6 +69,9 @@ export interface User {
   email: string;
   role: "provider" | "admin";
   business_name: string | null;
+  phone: string | null;
+  nextdoor_handle: string | null;
+  onboarding_source: string;
   timezone: string;
   automation_enabled: boolean;
 }

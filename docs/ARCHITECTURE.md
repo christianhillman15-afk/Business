@@ -97,7 +97,14 @@ beyond `create_all`.
 | `notifications.py` | In-app notifications + optional email; `notify` / `notify_admins` |
 | `routers/oauth.py` | Official OAuth connect (real when client id/secret set; simulated dev flow otherwise) |
 | `routers/notifications.py` | List / unread-count / mark-read endpoints |
+| `routers/account.py` | Account settings: update profile, set/change password, delete account |
 | `alembic/` | Database migrations (`alembic upgrade head`); Docker runs this on boot |
+
+**Trial lifecycle:** new accounts start `trialing` with a 7-day `trial_end`.
+Access to value-delivering actions (discovery, posting, broadcast) is gated by
+`require_active_user` — an expired trial returns `402` until a plan is chosen.
+The hourly `expire_trials` job sends a day-before reminder and an
+ended-trial email, and flips expired trials to `past_due`.
 
 Notifications fire on: welcome, plan/billing receipt, reply posted, quota
 exhausted, support escalation (to admins), and managed-page activation.

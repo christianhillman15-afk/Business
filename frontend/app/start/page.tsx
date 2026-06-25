@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api, Plan } from "@/lib/api";
 
 export default function StartTrialPage() {
@@ -124,6 +125,17 @@ export default function StartTrialPage() {
           <button className="btn-primary w-full" disabled={busy}>
             {busy ? "Starting…" : "Start free trial"}
           </button>
+          <p className="text-center text-xs text-slate-400">
+            By starting a trial you agree to our{" "}
+            <Link href="/terms" className="hover:underline">
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       </div>
     </div>

@@ -40,6 +40,18 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_active_user(user: User = Depends(get_current_user)) -> User:
+    """Gate value-delivering actions behind an active plan or unexpired trial."""
+    from .services import subscription_active
+
+    if user.role == UserRole.admin or subscription_active(user):
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        detail="Your trial has ended. Choose a plan to keep using LeadPilot.",
+    )
+
+
 def record_audit(
     db: Session,
     action: str,

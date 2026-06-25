@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..deps import get_current_user
+from ..deps import get_current_user, require_active_user
 from ..models import LeadMatch, LeadStatus, User
 from ..schemas import LeadOut, QuotaOut
 from ..services import daily_quota, posts_used_today, run_discovery
@@ -32,7 +32,7 @@ def list_leads(
 
 @router.post("/discover", response_model=list[LeadOut])
 def discover(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    user: User = Depends(require_active_user), db: Session = Depends(get_db)
 ):
     """Run a discovery sweep: find posts, field-match them, draft replies."""
     return run_discovery(db, user)

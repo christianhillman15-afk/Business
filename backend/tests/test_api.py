@@ -342,6 +342,69 @@ def test_broadcast_frequency_guard(client: TestClient):
     assert blocked.status_code == 429
 
 
+def test_account_update(client: TestClient, provider_headers: dict):
+    r = client.patch(
+        "/api/account",
+        headers=provider_headers,
+        json={"business_name": "Renamed Co", "phone": "(555) 999-0000", "timezone": "America/Chicago"},
+    )
+    assert r.status_code == 200
+    me = client.get("/api/auth/me", headers=provider_headers).json()
+    assert me["business_name"] == "Renamed Co"
+    assert me["timezone"] == "America/Chicago"
+
+
+def test_set_password_on_passwordless_account(client: TestClient, admin_headers: dict):
+    from app.security import create_magic_token
+
+    email = f"pw-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    client.post("/api/auth/start-trial", json={"email": email})
+    uid = next(
+        u["id"]
+        for u in client.get("/api/admin/users", headers=admin_headers).json()
+        if u["email"] == email
+    )
+    h = {
+        "Authorization": f"Bearer "
+        + client.post(
+            "/api/auth/magic/verify", json={"token": create_magic_token(uid)}
+        ).json()["access_token"]
+    }
+    # Passwordless account can set a password without a current one.
+    sp = client.post("/api/account/password", headers=h, json={"new_password": "brandnew123"})
+    assert sp.status_code == 200
+    # And can now log in with it.
+    assert client.post(
+        "/api/auth/login", json={"email": email, "password": "brandnew123"}
+    ).status_code == 200
+
+
+def test_expired_trial_blocks_actions(client: TestClient):
+    from datetime import datetime
+
+    from app.database import SessionLocal
+    from app.models import SubscriptionStatus, User
+
+    h = _fresh_provider(client)
+    me = client.get("/api/auth/me", headers=h).json()
+
+    db = SessionLocal()
+    try:
+        u = db.get(User, me["id"])
+        u.subscription.status = SubscriptionStatus.trialing
+        u.subscription.trial_end = datetime(2000, 1, 1)  # already expired
+        db.commit()
+    finally:
+        db.close()
+
+    # Value-delivering actions are now blocked with 402 until they pick a plan.
+    assert client.post("/api/leads/discover", headers=h).status_code == 402
+
+    # Subscribing restores access.
+    client.post("/api/subscription/select", headers=h, json={"plan_code": "growth"})
+    assert client.post("/api/leads/discover", headers=h).status_code == 200
+
+
 def test_billing_select_mock(client: TestClient, provider_headers: dict):
     res = client.post(
         "/api/subscription/select",

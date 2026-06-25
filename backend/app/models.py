@@ -124,6 +124,7 @@ class Subscription(Base):
         Enum(SubscriptionStatus), default=SubscriptionStatus.trialing
     )
     trial_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    trial_reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     external_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

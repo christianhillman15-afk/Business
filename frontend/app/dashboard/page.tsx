@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/useAuth";
-import { api, Capabilities, Lead, Quota, User } from "@/lib/api";
+import { ApiError, api, Capabilities, Lead, Quota, User } from "@/lib/api";
 
 function scoreBadge(score: number | null) {
   if (score === null) return null;
@@ -23,6 +24,7 @@ export default function DashboardPage() {
   const [quota, setQuota] = useState<Quota | null>(null);
   const [caps, setCaps] = useState<Capabilities>({});
   const [discovering, setDiscovering] = useState(false);
+  const [trialEnded, setTrialEnded] = useState(false);
 
   const refresh = useCallback(async () => {
     const [l, q, c] = await Promise.all([
@@ -58,7 +60,10 @@ export default function DashboardPage() {
     setDiscovering(true);
     try {
       await api.post("/api/leads/discover");
+      setTrialEnded(false);
       await refresh();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 402) setTrialEnded(true);
     } finally {
       setDiscovering(false);
     }
@@ -94,6 +99,18 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {trialEnded && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <span className="text-sm text-amber-800">
+            Your free trial has ended. Choose a plan to keep finding and posting
+            leads.
+          </span>
+          <Link href="/billing" className="btn-primary">
+            Choose a plan
+          </Link>
+        </div>
+      )}
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Plan" value={quota?.plan_code ?? "—"} />

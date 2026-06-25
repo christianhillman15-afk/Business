@@ -17,7 +17,7 @@ from ..config import settings
 from ..connectors import connector_for, provider_capabilities
 from ..crypto import decrypt
 from ..database import get_db
-from ..deps import get_current_user, record_audit
+from ..deps import get_current_user, record_audit, require_active_user
 from ..models import (
     AccountProvider,
     BroadcastPost,
@@ -162,7 +162,7 @@ def schedule_broadcast(
 def publish_broadcast(
     post_id: int,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_active_user),
     db: Session = Depends(get_db),
 ):
     post = _load_owned(post_id, user, db)

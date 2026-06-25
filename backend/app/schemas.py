@@ -79,6 +79,18 @@ class SubscriptionOut(ORMModel):
     trial_end: datetime | None
 
 
+class AccountUpdateRequest(BaseModel):
+    business_name: str | None = None
+    phone: str | None = None
+    timezone: str | None = None
+    nextdoor_handle: str | None = None
+
+
+class PasswordSetRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str = Field(min_length=8)
+
+
 class PricingProfileIn(BaseModel):
     trade: str | None = None
     service_categories: list[str] = []

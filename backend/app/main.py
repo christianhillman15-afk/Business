@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import init_db
 from .routers import (
+    account,
     accounts,
     admin,
     auth,
@@ -58,6 +59,7 @@ def health() -> dict:
 
 for r in (
     auth.router,
+    account.router,
     profile.router,
     accounts.router,
     leads.router,

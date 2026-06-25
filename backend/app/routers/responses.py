@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..connectors import connector_for, provider_capabilities
 from ..crypto import decrypt
 from ..database import get_db
-from ..deps import get_current_user, record_audit
+from ..deps import get_current_user, record_audit, require_active_user
 from ..models import (
     AgentResponse,
     ConnectedAccount,
@@ -61,7 +61,7 @@ def edit_draft(
 def approve_and_post(
     response_id: int,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_active_user),
     db: Session = Depends(get_db),
 ):
     resp, lead = _load_owned_response(response_id, user, db)
@@ -110,7 +110,7 @@ def approve_and_post(
 def mark_posted(
     response_id: int,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_active_user),
     db: Session = Depends(get_db),
 ):
     """Record that the client posted this reply themselves (human-in-the-loop).

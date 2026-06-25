@@ -33,6 +33,25 @@ def _split(csv: str | None) -> list[str]:
     return [s.strip() for s in (csv or "").split(",") if s.strip()]
 
 
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def subscription_active(user: User) -> bool:
+    """Whether the user currently has access: active plan, or an unexpired trial.
+
+    Enforced live (a trial whose end date has passed is inactive even before the
+    nightly expiry job flips its stored status)."""
+    sub = user.subscription
+    if not sub:
+        return False
+    if sub.status == SubscriptionStatus.active:
+        return True
+    if sub.status == SubscriptionStatus.trialing:
+        return sub.trial_end is None or sub.trial_end > _utcnow_naive()
+    return False
+
+
 def create_trial_user(
     db: Session,
     *,

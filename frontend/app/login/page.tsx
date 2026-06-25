@@ -105,6 +105,15 @@ export default function LoginPage() {
         <p className="mt-4 text-center text-xs text-slate-400">
           Demo: demo@leadpilot.io / demo1234
         </p>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          <Link href="/terms" className="hover:underline">
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" className="hover:underline">
+            Privacy
+          </Link>
+        </p>
       </div>
     </div>
   );
