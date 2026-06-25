@@ -12,4 +12,9 @@ cryptography==44.0.0
 argon2-cffi==23.1.0
 stripe==11.4.1
 APScheduler==3.11.0
+# PostgreSQL driver for production (DATABASE_URL=postgresql+psycopg://...).
+# Not used by the default SQLite dev setup.
+psycopg[binary]==3.2.3
+gunicorn==23.0.0
+
 
