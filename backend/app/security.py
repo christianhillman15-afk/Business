@@ -1,8 +1,9 @@
 """Password hashing and JWT helpers.
 
-Password hashing uses PBKDF2-HMAC-SHA256 from the standard library so the
-scaffold has no native build dependencies. For production, migrate to Argon2id
-(see docs/ARCHITECTURE.md — the spec calls for Argon2).
+Hashing uses Argon2id (the algorithm the spec calls for) when ``argon2-cffi`` is
+available, and transparently falls back to PBKDF2-HMAC-SHA256 from the standard
+library otherwise. ``verify_password`` accepts either format, so existing
+PBKDF2 hashes keep working after an Argon2 upgrade.
 """
 from __future__ import annotations
 
@@ -15,17 +16,37 @@ import jwt
 
 from .config import settings
 
+try:  # pragma: no cover - import guard
+    from argon2 import PasswordHasher
+    from argon2.exceptions import VerifyMismatchError
+
+    _ph: PasswordHasher | None = PasswordHasher()
+except Exception:  # noqa: BLE001
+    _ph = None
+    VerifyMismatchError = Exception  # type: ignore[assignment,misc]
+
 _PBKDF2_ROUNDS = 240_000
 _ALGO = "HS256"
 
 
 def hash_password(password: str) -> str:
+    if _ph is not None:
+        return _ph.hash(password)  # "$argon2id$..."
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, _PBKDF2_ROUNDS)
     return f"pbkdf2_sha256${_PBKDF2_ROUNDS}${salt.hex()}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
+    if stored.startswith("$argon2"):
+        if _ph is None:
+            return False
+        try:
+            return _ph.verify(stored, password)
+        except VerifyMismatchError:
+            return False
+        except Exception:  # noqa: BLE001
+            return False
     try:
         algo, rounds, salt_hex, digest_hex = stored.split("$")
         if algo != "pbkdf2_sha256":

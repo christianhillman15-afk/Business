@@ -28,10 +28,15 @@ export default function BillingPage() {
   async function selectPlan(code: string) {
     setBusy(code);
     try {
-      const updated = await api.post<Subscription>("/api/subscription/select", {
-        plan_code: code,
-      });
-      setSub(updated);
+      const res = await api.post<{
+        subscription: Subscription;
+        checkout_url: string | null;
+      }>("/api/subscription/select", { plan_code: code });
+      if (res.checkout_url) {
+        window.location.href = res.checkout_url; // Stripe Checkout
+        return;
+      }
+      setSub(res.subscription);
     } finally {
       setBusy(null);
     }

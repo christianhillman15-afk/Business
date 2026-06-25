@@ -8,12 +8,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from ..config import settings
+from ..billing import create_checkout, parse_webhook, stripe_enabled
 from ..database import get_db
 from ..deps import get_current_user, record_audit
-from ..models import SubscriptionStatus, User
+from ..models import Subscription, SubscriptionStatus, User
 from ..plans import get_plan
-from ..schemas import SelectPlanRequest, SubscriptionOut
+from ..schemas import SelectPlanRequest, SelectPlanResponse, SubscriptionOut
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 
@@ -23,7 +23,7 @@ def get_subscription(user: User = Depends(get_current_user)):
     return user.subscription
 
 
-@router.post("/select", response_model=SubscriptionOut)
+@router.post("/select", response_model=SelectPlanResponse)
 def select_plan(
     payload: SelectPlanRequest,
     request: Request,
@@ -36,19 +36,52 @@ def select_plan(
 
     sub = user.subscription
     sub.plan_code = plan.code
-    # With a real Stripe key, create a Checkout session here and only flip to
-    # active on webhook confirmation. The mock provider activates immediately.
-    if settings.stripe_secret_key:
+    checkout_url: str | None = None
+
+    if stripe_enabled():
+        # Real Stripe: create Checkout; activation happens on webhook.
+        checkout_url = create_checkout(user_id=user.id, email=user.email, plan=plan)
         sub.external_ref = "stripe:pending"
     else:
+        # Mock provider: activate immediately.
         sub.status = SubscriptionStatus.active
         sub.external_ref = f"mock:{plan.code}"
+
     db.commit()
     db.refresh(sub)
     record_audit(
         db, "subscription.select", user_id=user.id, detail=plan.code, request=request
     )
-    return sub
+    return SelectPlanResponse(subscription=sub, checkout_url=checkout_url)
+
+
+@router.post("/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    """Stripe webhook: activate a subscription on checkout completion."""
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature")
+    event = parse_webhook(payload, sig)
+    if not event:
+        raise HTTPException(status_code=400, detail="Invalid webhook")
+
+    if event.get("type") == "checkout.session.completed":
+        obj = event["data"]["object"]
+        meta = obj.get("metadata") or {}
+        user_id = meta.get("user_id") or obj.get("client_reference_id")
+        plan_code = meta.get("plan_code")
+        if user_id:
+            sub = (
+                db.query(Subscription)
+                .filter(Subscription.user_id == int(user_id))
+                .first()
+            )
+            if sub:
+                if plan_code:
+                    sub.plan_code = plan_code
+                sub.status = SubscriptionStatus.active
+                sub.external_ref = obj.get("subscription") or "stripe:active"
+                db.commit()
+    return {"received": True}
 
 
 @router.post("/cancel", response_model=SubscriptionOut)

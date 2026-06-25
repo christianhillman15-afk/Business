@@ -132,6 +132,11 @@ class SelectPlanRequest(BaseModel):
     plan_code: str
 
 
+class SelectPlanResponse(BaseModel):
+    subscription: SubscriptionOut
+    checkout_url: str | None = None
+
+
 # --- Support ----------------------------------------------------------------
 class SupportMessageOut(ORMModel):
     role: str
@@ -174,4 +179,14 @@ class AuditLogOut(ORMModel):
     user_id: int | None
     action: str
     detail: str | None
+    created_at: datetime
+
+
+class RecruitOut(ORMModel):
+    id: int
+    provider: AccountProvider
+    profile_url: str | None
+    contact_name: str | None
+    message_sent: bool
+    trial_signup_at: datetime | None
     created_at: datetime

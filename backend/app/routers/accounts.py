@@ -5,23 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..crypto import encrypt
 from ..database import get_db
 from ..deps import get_current_user, record_audit
 from ..models import ConnectedAccount, ConnectionHealth, User
 from ..schemas import ConnectAccountRequest, ConnectedAccountOut
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-
-
-def _obfuscate(credential: str | None) -> str | None:
-    """The stub does not store real sessions; it keeps an opaque marker only.
-
-    A real connector must AES-256-encrypt the captured session (see
-    docs/COMPLIANCE.md and the spec's security requirements).
-    """
-    if not credential:
-        return None
-    return "stub-session:" + str(abs(hash(credential)) % 10_000_000)
 
 
 @router.get("", response_model=list[ConnectedAccountOut])
@@ -44,7 +34,7 @@ def connect_account(
     ).scalar_one_or_none()
     if existing:
         existing.display_name = payload.display_name or existing.display_name
-        existing.encrypted_session = _obfuscate(payload.credential)
+        existing.encrypted_session = encrypt(payload.credential)
         existing.health = ConnectionHealth.healthy
         db.commit()
         db.refresh(existing)
@@ -54,7 +44,7 @@ def connect_account(
         user_id=user.id,
         provider=payload.provider,
         display_name=payload.display_name,
-        encrypted_session=_obfuscate(payload.credential),
+        encrypted_session=encrypt(payload.credential),
         health=ConnectionHealth.healthy,
     )
     db.add(account)

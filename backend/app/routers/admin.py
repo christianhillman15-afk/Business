@@ -18,7 +18,9 @@ from ..models import (
     User,
     UserRole,
 )
-from ..schemas import AdminUserOut, AuditLogOut, TicketOut
+from ..models import SubscriptionStatus
+from ..schemas import AdminUserOut, AuditLogOut, RecruitOut, TicketOut
+from ..services import run_recruiting
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -79,3 +81,44 @@ def audit_log(
 ):
     stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
     return db.execute(stmt).scalars().all()
+
+
+@router.get("/recruits", response_model=list[RecruitOut])
+def list_recruits(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    stmt = select(OutreachRecruit).order_by(OutreachRecruit.created_at.desc())
+    return db.execute(stmt).scalars().all()
+
+
+@router.post("/recruiting/run", response_model=list[RecruitOut])
+def run_recruiting_pipeline(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    return run_recruiting(db)
+
+
+@router.post("/discovery/run-all")
+def run_discovery_all(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    """Run a discovery sweep for every active provider with automation on."""
+    from ..services import run_discovery
+
+    providers = (
+        db.execute(
+            select(User).where(
+                User.role == UserRole.provider, User.automation_enabled.is_(True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    total = 0
+    for p in providers:
+        if p.subscription and p.subscription.status in (
+            SubscriptionStatus.active,
+            SubscriptionStatus.trialing,
+        ):
+            total += len(run_discovery(db, p))
+    return {"providers_scanned": len(providers), "leads_created": total}

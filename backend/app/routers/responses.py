@@ -10,10 +10,18 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from ..connectors import CONNECTORS
+from ..connectors import connector_for
+from ..crypto import decrypt
 from ..database import get_db
 from ..deps import get_current_user, record_audit
-from ..models import AgentResponse, LeadMatch, LeadStatus, ResponseStatus, User
+from ..models import (
+    AgentResponse,
+    ConnectedAccount,
+    LeadMatch,
+    LeadStatus,
+    ResponseStatus,
+    User,
+)
 from ..schemas import AgentResponseOut, DraftEditRequest
 from ..services import remaining_quota
 
@@ -68,8 +76,17 @@ def approve_and_post(
             status_code=429, detail="Daily post quota exhausted. Try again tomorrow."
         )
 
-    connector = CONNECTORS.get(lead.provider.value)
-    ok = connector.publish(post_url=lead.post_url, reply_text=resp.generated_text) if connector else False
+    account = (
+        db.query(ConnectedAccount)
+        .filter(
+            ConnectedAccount.user_id == user.id,
+            ConnectedAccount.provider == lead.provider,
+        )
+        .first()
+    )
+    credential = decrypt(account.encrypted_session) if account else None
+    connector = connector_for(lead.provider.value, credential=credential)
+    ok = connector.publish(post_url=lead.post_url, reply_text=resp.generated_text)
     if not ok:
         raise HTTPException(status_code=502, detail="Failed to publish reply")
 

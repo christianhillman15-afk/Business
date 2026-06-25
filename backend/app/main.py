@@ -1,6 +1,8 @@
 """LeadPilot API entrypoint."""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,10 +19,24 @@ from .routers import (
     support,
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    from .tasks import start_scheduler
+
+    app.state.scheduler = start_scheduler()
+    yield
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+
+
 app = FastAPI(
     title="LeadPilot API",
     version="0.1.0",
     description="AI-powered lead discovery and outreach for local service businesses.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -30,11 +46,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
 
 
 @app.get("/health", tags=["meta"])

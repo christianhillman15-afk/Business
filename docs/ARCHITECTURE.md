@@ -37,9 +37,12 @@ Next.js dashboard ── HTTP/JSON ──▶ FastAPI API
 | `security.py` | Password hashing (PBKDF2) + JWT |
 | `deps.py` | Current-user / admin guards, audit logging |
 | `plans.py` | The four tiers ($250/4 → $400/10) |
-| `services.py` | Discovery pipeline + quota accounting |
-| `ai/` | `client` (Claude wrapper), `matcher` (field-matching), `drafter` (replies), `support` (chatbot) |
-| `connectors/` | Pluggable social connectors + sample data source |
+| `crypto.py` | AES-256-GCM encryption of connected sessions at rest |
+| `billing.py` | Stripe Checkout + webhook, with a mock provider fallback |
+| `services.py` | Discovery pipeline, quota accounting, recruiting pipeline |
+| `tasks.py` | Scheduled / CLI jobs (`discover_all`, `recruit`) + APScheduler |
+| `ai/` | `client` (Claude wrapper), `matcher` (field-matching), `drafter` (replies), `support` (chatbot), `recruiter` (trial pitches) |
+| `connectors/` | `connector_for` factory → Meta Graph connector (live) or sample source (safe default) |
 | `routers/` | API endpoints |
 
 ### The discovery pipeline (`services.run_discovery`)
@@ -86,14 +89,22 @@ SQLite by default (zero-config dev). Set `DATABASE_URL` to a PostgreSQL DSN for
 production. Models are plain SQLAlchemy; add Alembic for migrations when moving
 beyond `create_all`.
 
-## Production hardening checklist (not done in the scaffold)
+## Done since the first scaffold
 
-- Swap PBKDF2 → **Argon2id** for password hashing (the spec calls for Argon2).
-- Encrypt connected-account sessions with **AES-256** in a real vault (the stub
-  stores only an opaque marker).
-- Real **Stripe** checkout + webhooks (mock provider is built in).
-- Background workers (Celery/RQ) for scheduled discovery instead of the
-  on-demand "Scan" button.
-- Rate limiting, structured logging, and per-account pacing in the connectors.
-- Real Facebook / Nextdoor connectors — **read [`COMPLIANCE.md`](COMPLIANCE.md)
-  first.**
+- **Argon2id** password hashing (PBKDF2 fallback kept for portability).
+- **AES-256-GCM** encryption of connected sessions (`crypto.py`).
+- **Stripe** Checkout + webhook activation (`billing.py`), mock provider when no key.
+- **Scheduled discovery** via APScheduler + CLI (`tasks.py`).
+- **Trial Recruiter** engine (`ai/recruiter.py` + admin endpoints).
+- **Meta Graph API** Facebook connector (`connectors/meta.py`), gated by
+  `LEADPILOT_LIVE_CONNECTORS`.
+- **Test suite** (`tests/`) covering the core flows.
+
+## Still recommended before production
+
+- Alembic migrations (currently `create_all`).
+- A durable job queue (Celery/RQ + Redis) if discovery volume grows beyond the
+  in-process scheduler.
+- Rate limiting, structured logging, per-account pacing, and Meta app review for
+  the live connector — **read [`COMPLIANCE.md`](COMPLIANCE.md) first.**
+- A real Nextdoor integration path (no public API today).

@@ -28,10 +28,18 @@ an admin console.
 | Layer | Tech | Status |
 |-------|------|--------|
 | Client dashboard, onboarding wizard, admin console | Next.js 14 (App Router), React, Tailwind, TypeScript | ✅ runnable |
-| API, auth, billing, lead/CRM model | FastAPI, SQLAlchemy, JWT | ✅ runnable |
-| AI: **field-matching**, reply drafting, support chatbot | Anthropic Claude (`claude-opus-4-8`) | ✅ runnable, graceful offline fallback |
+| API, auth, lead/CRM model | FastAPI, SQLAlchemy, JWT | ✅ runnable |
+| AI: **field-matching**, reply drafting, support chatbot, trial recruiter | Anthropic Claude (`claude-opus-4-8`) | ✅ runnable, graceful offline fallback |
+| Security: Argon2id passwords, AES-256-GCM session encryption | `argon2-cffi`, `cryptography` | ✅ runnable, with std-lib fallback |
+| Billing | Stripe Checkout + webhook, mock provider fallback | ✅ runnable (mock by default) |
+| Background discovery | APScheduler + CLI (`python -m app.tasks`) | ✅ runnable |
 | Database | SQLite (dev) / PostgreSQL (prod) | ✅ runnable |
-| Social connectors (Facebook / Nextdoor) | Pluggable interface + sample source | 🔌 stubbed |
+| Facebook connector | **Meta Graph API** (read feeds + publish comments) | ✅ implemented, off by default |
+| Nextdoor connector | Pluggable interface + sample source | 🔌 stubbed (no public API) |
+
+> **Safety default:** `LEADPILOT_LIVE_CONNECTORS=false` out of the box, so the
+> Meta connector never publishes and discovery uses the offline sample source.
+> Flip it on only after reading [`docs/COMPLIANCE.md`](docs/COMPLIANCE.md).
 
 The headline feature — **the bot only engages posts that genuinely fall within
 the client's trade** — is implemented as a first-class AI relevance classifier
@@ -97,11 +105,40 @@ so you can develop and demo offline. Three AI jobs:
 
 ---
 
+## Background jobs
+
+```bash
+cd backend
+python -m app.tasks discover-all   # scan for all active providers
+python -m app.tasks recruit        # queue trial pitches to other providers
+```
+
+Or set `LEADPILOT_SCHEDULER_ENABLED=true` to run discovery automatically every
+`LEADPILOT_SCHEDULER_INTERVAL_MINUTES`. Admins can also trigger both jobs from
+the Admin console.
+
+## Tests
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Covers auth, field-matching, quota-enforced posting, billing, support
+escalation, recruiting, and the crypto/password primitives.
+
 ## Project layout
 
 ```
-backend/    FastAPI service (auth, billing, leads, AI, admin)
-frontend/   Next.js dashboard, onboarding wizard, admin console
+backend/    FastAPI service (auth, billing, leads, AI, connectors, admin)
+  app/ai/          field-matching, drafting, support, recruiter
+  app/connectors/  Meta Graph + sample connectors (pluggable)
+  app/crypto.py    AES-256-GCM session encryption
+  app/billing.py   Stripe + mock billing
+  app/tasks.py     scheduled/CLI jobs
+  tests/           pytest suite
+frontend/   Next.js dashboard, onboarding wizard, billing, support, admin
 docs/       Architecture and compliance notes
 ```
 

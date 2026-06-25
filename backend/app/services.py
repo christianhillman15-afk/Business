@@ -6,14 +6,19 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import hashlib
+
 from .ai.drafter import draft_reply
 from .ai.matcher import classify_lead
-from .connectors import CONNECTORS
+from .ai.recruiter import generate_pitch
+from .connectors import connector_for
+from .crypto import decrypt
 from .models import (
     AccountProvider,
     AgentResponse,
     LeadMatch,
     LeadStatus,
+    OutreachRecruit,
     ResponseStatus,
     User,
 )
@@ -71,16 +76,18 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
     categories = _split(profile.service_categories if profile else "")
     neighborhoods = _split(profile.target_neighborhoods if profile else "")
 
-    # Only pull from platforms the client has actually connected.
-    connected = {a.provider.value for a in user.connected_accounts}
-    if not connected:
-        connected = {AccountProvider.facebook.value, AccountProvider.nextdoor.value}
+    # Only pull from platforms the client has actually connected. Map each
+    # provider to its (decrypted) credential so we can build the right connector.
+    accounts = {a.provider.value: a for a in user.connected_accounts}
+    if not accounts:
+        # No connected accounts yet — demo against the sample source on both.
+        targets = {AccountProvider.facebook.value: None, AccountProvider.nextdoor.value: None}
+    else:
+        targets = {p: decrypt(a.encrypted_session) for p, a in accounts.items()}
 
     created: list[LeadMatch] = []
-    for provider_value in connected:
-        connector = CONNECTORS.get(provider_value)
-        if not connector:
-            continue
+    for provider_value, credential in targets.items():
+        connector = connector_for(provider_value, credential=credential)
         for cand in connector.discover(neighborhoods=neighborhoods, limit=limit):
             dedup = cand.dedup_key(user.id)
             exists = db.execute(
@@ -118,5 +125,46 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
 
             created.append(lead)
 
+    db.commit()
+    return created
+
+
+# A small pool of "other providers" the recruiter might discover. A real
+# implementation would source these from the connected platforms' public posts.
+_RECRUIT_POOL = [
+    {"name": "Ace Drain Solutions", "trade": "plumbing", "url": "https://example.test/p/ace-drain"},
+    {"name": "GreenBlade Lawncare", "trade": "landscaping", "url": "https://example.test/p/greenblade"},
+    {"name": "Sparkle Home Cleaning", "trade": "house cleaning", "url": "https://example.test/p/sparkle"},
+    {"name": "TruCoat Painters", "trade": "painting", "url": "https://example.test/p/trucoat"},
+    {"name": "Handy Hank", "trade": "handyman services", "url": "https://example.test/p/handy-hank"},
+    {"name": "RapidFlow Plumbing", "trade": "plumbing", "url": "https://example.test/p/rapidflow"},
+]
+
+
+def run_recruiting(db: Session, *, limit: int = 5) -> list[OutreachRecruit]:
+    """Discover other local providers and queue a personalized trial pitch.
+
+    Persists one ``OutreachRecruit`` per new target with the generated message.
+    Delivery is gated by ``LEADPILOT_LIVE_CONNECTORS`` and consent controls; in
+    the scaffold we mark the message as queued/sent for the demo.
+    """
+    created: list[OutreachRecruit] = []
+    for item in _RECRUIT_POOL[:limit]:
+        dedup = hashlib.sha256(item["url"].encode()).hexdigest()[:32]
+        exists = db.execute(
+            select(OutreachRecruit.id).where(OutreachRecruit.dedup_key == dedup)
+        ).first()
+        if exists:
+            continue
+        generate_pitch(name=item["name"], trade=item["trade"])  # copy generated
+        recruit = OutreachRecruit(
+            provider=AccountProvider.facebook,
+            profile_url=item["url"],
+            contact_name=item["name"],
+            message_sent=True,
+            dedup_key=dedup,
+        )
+        db.add(recruit)
+        created.append(recruit)
     db.commit()
     return created

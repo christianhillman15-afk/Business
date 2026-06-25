@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/useAuth";
@@ -28,6 +28,14 @@ interface AuditEntry {
   detail: string | null;
   created_at: string;
 }
+interface Recruit {
+  id: number;
+  provider: string;
+  contact_name: string | null;
+  profile_url: string | null;
+  message_sent: boolean;
+  trial_signup_at: string | null;
+}
 
 export default function AdminPage() {
   const { user, loading, logout } = useAuth();
@@ -35,6 +43,15 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [recruits, setRecruits] = useState<Recruit[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api.get<AdminStats>("/api/admin/stats").then(setStats).catch(() => {});
+    api.get<AdminUser[]>("/api/admin/users").then(setUsers).catch(() => {});
+    api.get<AuditEntry[]>("/api/admin/audit?limit=15").then(setAudit).catch(() => {});
+    api.get<Recruit[]>("/api/admin/recruits").then(setRecruits).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -42,13 +59,18 @@ export default function AdminPage() {
       router.replace("/dashboard");
       return;
     }
-    api.get<AdminStats>("/api/admin/stats").then(setStats).catch(() => {});
-    api.get<AdminUser[]>("/api/admin/users").then(setUsers).catch(() => {});
-    api
-      .get<AuditEntry[]>("/api/admin/audit?limit=15")
-      .then(setAudit)
-      .catch(() => {});
-  }, [user, router]);
+    load();
+  }, [user, router, load]);
+
+  async function runJob(path: string, key: string) {
+    setBusy(key);
+    try {
+      await api.post(path);
+      load();
+    } finally {
+      setBusy(null);
+    }
+  }
 
   if (loading || !user || user.role !== "admin") {
     return (
@@ -60,10 +82,30 @@ export default function AdminPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <h1 className="mb-1 text-2xl font-bold">Admin console</h1>
-      <p className="mb-6 text-sm text-slate-500">
-        Platform-wide monitoring, client accounts, and audit trail.
-      </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Admin console</h1>
+          <p className="text-sm text-slate-500">
+            Platform-wide monitoring, recruiting, and audit trail.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            className="btn-ghost"
+            disabled={busy === "discovery"}
+            onClick={() => runJob("/api/admin/discovery/run-all", "discovery")}
+          >
+            {busy === "discovery" ? "Scanning…" : "Run discovery (all)"}
+          </button>
+          <button
+            className="btn-primary"
+            disabled={busy === "recruit"}
+            onClick={() => runJob("/api/admin/recruiting/run", "recruit")}
+          >
+            {busy === "recruit" ? "Recruiting…" : "Run recruiter"}
+          </button>
+        </div>
+      </div>
 
       {stats && (
         <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -106,6 +148,49 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-semibold">
+          Trial Recruiter{" "}
+          <span className="text-sm font-normal text-slate-400">
+            ({recruits.length} contacted)
+          </span>
+        </h2>
+        {recruits.length === 0 ? (
+          <div className="card text-sm text-slate-500">
+            No recruiting activity yet. Click <strong>Run recruiter</strong> to
+            queue trial pitches to other local providers.
+          </div>
+        ) : (
+          <div className="card space-y-1 text-sm">
+            {recruits.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between border-b border-slate-100 py-1 last:border-0"
+              >
+                <span className="font-medium text-slate-700">
+                  {r.contact_name || r.profile_url}
+                </span>
+                <span className="flex items-center gap-2 text-xs">
+                  {r.trial_signup_at ? (
+                    <span className="badge bg-green-100 text-green-700">
+                      Signed up
+                    </span>
+                  ) : r.message_sent ? (
+                    <span className="badge bg-brand-50 text-brand-700">
+                      Pitched
+                    </span>
+                  ) : (
+                    <span className="badge bg-slate-100 text-slate-500">
+                      Queued
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section>
