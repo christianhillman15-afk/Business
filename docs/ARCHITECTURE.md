@@ -36,7 +36,7 @@ Next.js dashboard ── HTTP/JSON ──▶ FastAPI API
 | `schemas.py` | Pydantic request/response models |
 | `security.py` | Password hashing (PBKDF2) + JWT |
 | `deps.py` | Current-user / admin guards, audit logging |
-| `plans.py` | The four tiers ($250/4 → $400/10) |
+| `plans.py` | The five tiers ($200/1 → $400/8 posts per day) |
 | `crypto.py` | AES-256-GCM encryption of connected sessions at rest |
 | `billing.py` | Stripe Checkout + webhook, with a mock provider fallback |
 | `services.py` | Discovery pipeline, quota accounting, recruiting pipeline |
