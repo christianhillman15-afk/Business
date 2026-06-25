@@ -22,12 +22,21 @@ class CandidatePost:
 class Connector(ABC):
     """A social-platform integration.
 
-    ``discover`` returns candidate posts near the client; ``publish`` posts an
-    approved reply. Implementations must respect platform Terms of Service and
-    the client's own connected, authorized account.
+    Capabilities differ by platform and drive the product's workflow:
+
+    - ``supports_reply_autopost`` — can the platform's official API post a reply
+      on *another member's* existing post? Facebook's Graph API can; Nextdoor's
+      API cannot (only new posts), so Nextdoor replies are human-in-the-loop.
+    - ``supports_broadcast`` — can the API publish a *new* post from the client's
+      own page/profile (a proactive "broadcast")? Both Facebook and Nextdoor can.
+
+    Implementations must respect platform Terms of Service and the client's own
+    connected, authorized account.
     """
 
     provider: str
+    supports_reply_autopost: bool = False
+    supports_broadcast: bool = False
 
     @abstractmethod
     def discover(
@@ -37,4 +46,12 @@ class Connector(ABC):
 
     @abstractmethod
     def publish(self, *, post_url: str | None, reply_text: str) -> bool:
+        """Post an approved reply on an existing post. Only meaningful when
+        ``supports_reply_autopost`` is True."""
         ...
+
+    def broadcast(self, *, body_text: str, profile_id: str | None = None) -> bool:
+        """Publish a new post from the client's own page/profile."""
+        raise NotImplementedError(
+            f"{self.provider} connector does not support broadcast posts"
+        )

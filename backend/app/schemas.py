@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import (
     AccountProvider,
+    BroadcastStatus,
     ConnectionHealth,
     LeadStatus,
     ResponseStatus,
@@ -180,6 +181,25 @@ class AuditLogOut(ORMModel):
     action: str
     detail: str | None
     created_at: datetime
+
+
+# --- Broadcast (Business Posts) ---------------------------------------------
+class BroadcastOut(ORMModel):
+    id: int
+    provider: AccountProvider
+    body_text: str
+    status: BroadcastStatus
+    posted_at: datetime | None
+    created_at: datetime
+
+
+class BroadcastDraftRequest(BaseModel):
+    provider: AccountProvider = AccountProvider.nextdoor
+    topic: str | None = None
+
+
+class BroadcastEditRequest(BaseModel):
+    body_text: str
 
 
 class RecruitOut(ORMModel):

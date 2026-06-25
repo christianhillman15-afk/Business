@@ -127,3 +127,18 @@ export interface Subscription {
   status: string;
   trial_end: string | null;
 }
+
+export interface ProviderCapability {
+  reply_autopost: boolean;
+  broadcast: boolean;
+}
+export type Capabilities = Record<string, ProviderCapability>;
+
+export interface Broadcast {
+  id: number;
+  provider: "facebook" | "nextdoor";
+  body_text: string;
+  status: "draft" | "posted";
+  posted_at: string | null;
+  created_at: string;
+}

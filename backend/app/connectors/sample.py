@@ -77,6 +77,10 @@ _SAMPLE_POOL: list[dict] = [
 
 
 class SampleConnector(Connector):
+    # The offline connector simulates everything succeeding.
+    supports_reply_autopost = True
+    supports_broadcast = True
+
     def __init__(self, provider: str) -> None:
         self.provider = provider
 
@@ -102,4 +106,7 @@ class SampleConnector(Connector):
     def publish(self, *, post_url: str | None, reply_text: str) -> bool:
         # Real connectors post via the client's authorized account / official
         # API. The sample connector just reports success.
+        return True
+
+    def broadcast(self, *, body_text: str, profile_id: str | None = None) -> bool:
         return True

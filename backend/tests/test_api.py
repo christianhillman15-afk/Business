@@ -118,6 +118,59 @@ def test_admin_stats_and_recruiting(client: TestClient, admin_headers: dict):
     assert len(listing) >= len(recruits)
 
 
+def test_capabilities(client: TestClient, provider_headers: dict):
+    caps = client.get("/api/capabilities", headers=provider_headers).json()
+    # Facebook can auto-reply; Nextdoor cannot (no reply API).
+    assert caps["facebook"]["reply_autopost"] is True
+    assert caps["nextdoor"]["reply_autopost"] is False
+    assert caps["nextdoor"]["broadcast"] is True
+
+
+def _collect_draft_for(client: TestClient, headers: dict, provider: str) -> dict | None:
+    for _ in range(8):
+        leads = client.post("/api/leads/discover", headers=headers).json()
+        for lead in leads:
+            if (
+                lead["provider"] == provider
+                and lead["status"] == "drafted"
+                and lead["response"]
+            ):
+                return lead
+    return None
+
+
+def test_nextdoor_reply_is_human_in_the_loop(
+    client: TestClient, provider_headers: dict
+):
+    lead = _collect_draft_for(client, provider_headers, "nextdoor")
+    assert lead is not None, "expected a drafted Nextdoor lead"
+    rid = lead["response"]["id"]
+    # Auto-posting is blocked for Nextdoor (no reply API).
+    blocked = client.post(f"/api/responses/{rid}/approve", headers=provider_headers)
+    assert blocked.status_code == 409
+    # The client posts it themselves, then confirms via mark-posted.
+    done = client.post(f"/api/responses/{rid}/mark-posted", headers=provider_headers)
+    assert done.status_code == 200
+    assert done.json()["status"] == "posted"
+
+
+def test_broadcast_business_post(client: TestClient, provider_headers: dict):
+    draft = client.post(
+        "/api/broadcast/draft",
+        headers=provider_headers,
+        json={"provider": "nextdoor", "topic": "drain cleaning special"},
+    )
+    assert draft.status_code == 201
+    post = draft.json()
+    assert post["status"] == "draft"
+    assert post["body_text"]
+    pub = client.post(
+        f"/api/broadcast/{post['id']}/publish", headers=provider_headers
+    )
+    assert pub.status_code == 200
+    assert pub.json()["status"] == "posted"
+
+
 def test_billing_select_mock(client: TestClient, provider_headers: dict):
     res = client.post(
         "/api/subscription/select",

@@ -23,7 +23,7 @@ is to get your customers' accounts banned in week one.
 
 | Spec item | Risk | Safer approach |
 |-----------|------|----------------|
-| Scraping Facebook Groups / Nextdoor | Violates ToS; account bans | Meta Graph API; for Nextdoor, partner/official routes only |
+| Scraping Facebook Groups / Nextdoor | Violates ToS; account bans | Meta Graph API; for Nextdoor use the official Search/Create-Post APIs — see [`NEXTDOOR.md`](NEXTDOOR.md) |
 | Storing & automating users' session cookies | ToS violation; account takeover pattern | OAuth tokens with least-privilege scopes; never drive a human's logged-in session covertly |
 | "Bypassing city restrictions" + randomized pacing to dodge detection | Detection evasion | Don't build ban-evasion. Operate within platform rules |
 | Automated mass cold outreach | CAN-SPAM / platform spam policies | Opt-in only; rate-limited; clear identification + opt-out |

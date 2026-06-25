@@ -41,8 +41,8 @@ Next.js dashboard ── HTTP/JSON ──▶ FastAPI API
 | `billing.py` | Stripe Checkout + webhook, with a mock provider fallback |
 | `services.py` | Discovery pipeline, quota accounting, recruiting pipeline |
 | `tasks.py` | Scheduled / CLI jobs (`discover_all`, `recruit`) + APScheduler |
-| `ai/` | `client` (Claude wrapper), `matcher` (field-matching), `drafter` (replies), `support` (chatbot), `recruiter` (trial pitches) |
-| `connectors/` | `connector_for` factory → Meta Graph connector (live) or sample source (safe default) |
+| `ai/` | `client` (Claude wrapper), `matcher` (field-matching), `drafter` (replies), `support` (chatbot), `recruiter` (trial pitches), `broadcaster` (Business Posts) |
+| `connectors/` | `connector_for` factory + `provider_capabilities`; Meta Graph + **Nextdoor** connectors + sample source. See [`NEXTDOOR.md`](NEXTDOOR.md) |
 | `routers/` | API endpoints |
 
 ### The discovery pipeline (`services.run_discovery`)

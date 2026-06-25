@@ -235,6 +235,31 @@ class SupportMessage(Base):
     ticket: Mapped[SupportTicket] = relationship(back_populates="messages")
 
 
+class BroadcastStatus(str, enum.Enum):
+    draft = "draft"
+    posted = "posted"
+
+
+class BroadcastPost(Base):
+    """A proactive 'Business Post' the client publishes to nearby neighbors.
+
+    On Nextdoor this maps to the official Create Post API (no reply API exists);
+    on Facebook, to a Page feed post. Composed by AI, published on approval.
+    """
+
+    __tablename__ = "broadcast_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[AccountProvider] = mapped_column(Enum(AccountProvider))
+    body_text: Mapped[str] = mapped_column(Text)
+    status: Mapped[BroadcastStatus] = mapped_column(
+        Enum(BroadcastStatus), default=BroadcastStatus.draft
+    )
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from ..connectors import PROVIDER_CAPABILITIES
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import ClientPricingProfile, User
@@ -11,6 +12,12 @@ from ..plans import PLANS
 from ..schemas import PlanOut, PricingProfileIn, PricingProfileOut
 
 router = APIRouter(prefix="/api", tags=["profile"])
+
+
+@router.get("/capabilities")
+def capabilities():
+    """Per-platform capabilities that drive the dashboard workflow."""
+    return PROVIDER_CAPABILITIES
 
 
 def _split(csv: str | None) -> list[str]:

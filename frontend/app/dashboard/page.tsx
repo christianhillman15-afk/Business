@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/useAuth";
-import { api, Lead, Quota, User } from "@/lib/api";
+import { api, Capabilities, Lead, Quota, User } from "@/lib/api";
 
 function scoreBadge(score: number | null) {
   if (score === null) return null;
@@ -21,15 +21,18 @@ export default function DashboardPage() {
   const { user, loading, logout, setUser } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
+  const [caps, setCaps] = useState<Capabilities>({});
   const [discovering, setDiscovering] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [l, q] = await Promise.all([
+    const [l, q, c] = await Promise.all([
       api.get<Lead[]>("/api/leads"),
       api.get<Quota>("/api/leads/quota"),
+      api.get<Capabilities>("/api/capabilities"),
     ]);
     setLeads(l);
     setQuota(q);
+    setCaps(c);
   }, []);
 
   useEffect(() => {
@@ -124,7 +127,12 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {matched.map((lead) => (
-              <LeadCard key={lead.id} lead={lead} onChange={refresh} />
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                canAutopost={caps[lead.provider]?.reply_autopost ?? true}
+                onChange={refresh}
+              />
             ))}
           </div>
         )}
@@ -187,10 +195,19 @@ function Stat({
   );
 }
 
-function LeadCard({ lead, onChange }: { lead: Lead; onChange: () => void }) {
+function LeadCard({
+  lead,
+  canAutopost,
+  onChange,
+}: {
+  lead: Lead;
+  canAutopost: boolean;
+  onChange: () => void;
+}) {
   const [text, setText] = useState(lead.response?.generated_text ?? "");
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const posted = lead.response?.status === "posted";
 
@@ -276,7 +293,7 @@ function LeadCard({ lead, onChange }: { lead: Lead; onChange: () => void }) {
                     Cancel
                   </button>
                 </>
-              ) : (
+              ) : canAutopost ? (
                 <>
                   <button
                     className="btn-primary"
@@ -309,6 +326,52 @@ function LeadCard({ lead, onChange }: { lead: Lead; onChange: () => void }) {
                     }
                   >
                     Reject
+                  </button>
+                </>
+              ) : (
+                // Assist flow: platform has no reply API (e.g. Nextdoor), so the
+                // client posts the reply themselves, then confirms it here.
+                <>
+                  <button
+                    className="btn-primary"
+                    onClick={async () => {
+                      await navigator.clipboard?.writeText(
+                        lead.response!.generated_text,
+                      );
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    }}
+                  >
+                    {copied ? "Copied ✓" : "Copy reply"}
+                  </button>
+                  {lead.post_url && (
+                    <a
+                      className="btn-ghost"
+                      href={lead.post_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open post ↗
+                    </a>
+                  )}
+                  <button
+                    className="btn-ghost"
+                    disabled={busy}
+                    onClick={() =>
+                      act(() =>
+                        api.post(
+                          `/api/responses/${lead.response!.id}/mark-posted`,
+                        ),
+                      )
+                    }
+                  >
+                    I posted it
+                  </button>
+                  <button
+                    className="btn-ghost"
+                    onClick={() => setEditing(true)}
+                  >
+                    Edit
                   </button>
                 </>
               )}

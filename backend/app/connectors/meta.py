@@ -29,10 +29,20 @@ GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_VERSION}"
 
 class MetaGraphConnector(Connector):
     provider = "facebook"
+    # The Graph API can comment on posts and publish to a Page feed.
+    supports_reply_autopost = True
+    supports_broadcast = True
 
-    def __init__(self, *, access_token: str, group_ids: list[str]) -> None:
+    def __init__(
+        self,
+        *,
+        access_token: str,
+        group_ids: list[str],
+        page_id: str | None = None,
+    ) -> None:
         self.access_token = access_token
         self.group_ids = group_ids
+        self.page_id = page_id
 
     def discover(
         self, *, neighborhoods: list[str], limit: int = 10
@@ -90,6 +100,23 @@ class MetaGraphConnector(Connector):
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning("Meta publish failed: %s", exc)
+            return False
+
+    def broadcast(self, *, body_text: str, profile_id: str | None = None) -> bool:
+        target = profile_id or self.page_id
+        if not target:
+            logger.warning("Cannot broadcast: no Page id configured")
+            return False
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.post(
+                    f"{GRAPH_BASE}/{target}/feed",
+                    data={"message": body_text, "access_token": self.access_token},
+                )
+                resp.raise_for_status()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Meta broadcast failed: %s", exc)
             return False
 
 

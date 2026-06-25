@@ -35,7 +35,7 @@ an admin console.
 | Background discovery | APScheduler + CLI (`python -m app.tasks`) | ✅ runnable |
 | Database | SQLite (dev) / PostgreSQL (prod) | ✅ runnable |
 | Facebook connector | **Meta Graph API** (read feeds + publish comments) | ✅ implemented, off by default |
-| Nextdoor connector | Pluggable interface + sample source | 🔌 stubbed (no public API) |
+| Nextdoor connector | **Official Search + Create-Post API**; reply-assist (human-in-the-loop) + AI **Business Posts** broadcast | ✅ implemented, off by default — see [`docs/NEXTDOOR.md`](docs/NEXTDOOR.md) |
 
 > **Safety default:** `LEADPILOT_LIVE_CONNECTORS=false` out of the box, so the
 > Meta connector never publishes and discovery uses the offline sample source.
