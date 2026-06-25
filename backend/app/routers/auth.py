@@ -16,6 +16,7 @@ from ..models import (
     User,
     UserRole,
 )
+from ..notifications import notify
 from ..plans import DEFAULT_PLAN_CODE, get_plan
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from ..security import create_access_token, hash_password, verify_password
@@ -50,6 +51,17 @@ def register(payload: RegisterRequest, request: Request, db: Session = Depends(g
 
     record_audit(
         db, "user.register", user_id=user.id, detail=user.email, request=request
+    )
+    notify(
+        db,
+        user,
+        kind="welcome",
+        title="Welcome to LeadPilot 🎉",
+        body=(
+            "Your 7-day trial is active. Next: connect an account and set your "
+            "trade so the AI can start finding local leads for you."
+        ),
+        email=True,
     )
     token = create_access_token(str(user.id), user.role.value)
     return TokenResponse(access_token=token)

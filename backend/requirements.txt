@@ -16,5 +16,6 @@ APScheduler==3.11.0
 # Not used by the default SQLite dev setup.
 psycopg[binary]==3.2.3
 gunicorn==23.0.0
+alembic==1.14.0
 
 

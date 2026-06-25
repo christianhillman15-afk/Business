@@ -104,6 +104,7 @@ function BroadcastCard({
 }) {
   const [text, setText] = useState(post.body_text);
   const [editing, setEditing] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const posted = post.status === "posted";
@@ -127,9 +128,20 @@ function BroadcastCard({
         <span className="badge bg-brand-50 capitalize text-brand-700">
           {post.provider}
         </span>
-        {posted ? (
+        {post.status === "posted" && (
           <span className="badge bg-green-100 text-green-700">Posted</span>
-        ) : (
+        )}
+        {post.status === "scheduled" && (
+          <span className="badge bg-blue-100 text-blue-700">
+            Scheduled{" "}
+            {post.scheduled_for &&
+              `· ${new Date(post.scheduled_for).toLocaleString()}`}
+          </span>
+        )}
+        {post.status === "failed" && (
+          <span className="badge bg-red-100 text-red-700">Failed</span>
+        )}
+        {post.status === "draft" && (
           <span className="badge bg-amber-100 text-amber-700">Draft</span>
         )}
       </div>
@@ -175,25 +187,50 @@ function BroadcastCard({
               </button>
             </>
           ) : (
-            <>
-              <button
-                className="btn-primary"
-                disabled={busy}
-                onClick={() => act(() => api.post(`/api/broadcast/${post.id}/publish`))}
-              >
-                Publish to {post.provider}
-              </button>
-              <button className="btn-ghost" onClick={() => setEditing(true)}>
-                Edit
-              </button>
-              <button
-                className="btn-ghost"
-                disabled={busy}
-                onClick={() => act(() => api.del(`/api/broadcast/${post.id}`))}
-              >
-                Delete
-              </button>
-            </>
+            <div className="flex w-full flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn-primary"
+                  disabled={busy}
+                  onClick={() =>
+                    act(() => api.post(`/api/broadcast/${post.id}/publish`))
+                  }
+                >
+                  Publish now
+                </button>
+                <button className="btn-ghost" onClick={() => setEditing(true)}>
+                  Edit
+                </button>
+                <button
+                  className="btn-ghost"
+                  disabled={busy}
+                  onClick={() => act(() => api.del(`/api/broadcast/${post.id}`))}
+                >
+                  Delete
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="datetime-local"
+                  className="input max-w-[230px]"
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                />
+                <button
+                  className="btn-ghost"
+                  disabled={busy || !scheduleAt}
+                  onClick={() =>
+                    act(() =>
+                      api.post(`/api/broadcast/${post.id}/schedule`, {
+                        scheduled_for: scheduleAt,
+                      }),
+                    )
+                  }
+                >
+                  Schedule
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

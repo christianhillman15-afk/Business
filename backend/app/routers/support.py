@@ -9,6 +9,7 @@ from ..ai.support import answer, should_escalate
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import SupportMessage, SupportTicket, TicketStatus, User
+from ..notifications import notify_admins
 from ..schemas import SupportChatRequest, SupportChatResponse, TicketOut
 
 router = APIRouter(prefix="/api/support", tags=["support"])
@@ -51,5 +52,13 @@ def chat(
 
     db.add(SupportMessage(ticket_id=ticket.id, role="assistant", content=reply))
     db.commit()
+
+    if escalate:
+        notify_admins(
+            db,
+            kind="support_escalation",
+            title=f"Support escalation from {user.business_name or user.email}",
+            body=f"Ticket #{ticket.id}: “{payload.message[:140]}”",
+        )
 
     return SupportChatResponse(ticket_id=ticket.id, reply=reply, escalated=escalate)

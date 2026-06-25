@@ -61,6 +61,19 @@ def recruit() -> dict:
         db.close()
 
 
+def publish_scheduled_broadcasts() -> dict:
+    from .routers.broadcast import publish_due_broadcasts
+
+    db = SessionLocal()
+    try:
+        n = publish_due_broadcasts(db)
+        if n:
+            logger.info("published %s scheduled broadcast(s)", n)
+        return {"published": n}
+    finally:
+        db.close()
+
+
 def start_scheduler() -> object | None:
     """Start the APScheduler background scheduler if enabled. Returns it."""
     from .config import settings
@@ -79,6 +92,10 @@ def start_scheduler() -> object | None:
         "interval",
         minutes=settings.leadpilot_scheduler_interval_minutes,
         id="discover_all",
+    )
+    # Check for due scheduled Business Posts every few minutes.
+    scheduler.add_job(
+        publish_scheduled_broadcasts, "interval", minutes=5, id="publish_broadcasts"
     )
     scheduler.start()
     logger.info(

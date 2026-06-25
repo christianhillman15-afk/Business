@@ -21,6 +21,7 @@ from ..models import (
     User,
     UserRole,
 )
+from ..notifications import notify
 from ..schemas import (
     AdminUserOut,
     AuditLogOut,
@@ -130,6 +131,15 @@ def activate_managed_account(
     db.commit()
     db.refresh(acc)
     u = db.get(User, acc.user_id)
+    if u:
+        notify(
+            db,
+            u,
+            kind="page_live",
+            title=f"Your {acc.provider.value} Business Page is live",
+            body="We've finished setting up your Business Page. The AI can now post for you.",
+            email=True,
+        )
     return ManagedAccountOut(
         id=acc.id,
         provider=acc.provider,

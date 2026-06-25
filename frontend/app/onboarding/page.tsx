@@ -25,13 +25,18 @@ export default function OnboardingPage() {
     );
   }
 
-  async function connect(
-    provider: "facebook" | "nextdoor",
-    auth_method: "oauth" | "managed_business_page",
-  ) {
+  async function connectOAuth(provider: "facebook" | "nextdoor") {
+    // Official authorize flow — no password is ever entered in LeadPilot.
+    const res = await api.get<{ authorize_url: string }>(
+      `/api/accounts/oauth/${provider}/start`,
+    );
+    window.location.href = res.authorize_url;
+  }
+
+  async function connectManaged(provider: "facebook" | "nextdoor") {
     await api.post<ConnectedAccount>("/api/accounts", {
       provider,
-      auth_method,
+      auth_method: "managed_business_page",
       display_name: user!.business_name,
     });
     setAccounts(await api.get<ConnectedAccount[]>("/api/accounts"));
@@ -111,13 +116,13 @@ export default function OnboardingPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       className="btn-primary"
-                      onClick={() => connect(p, "oauth")}
+                      onClick={() => connectOAuth(p)}
                     >
                       Connect with {p === "facebook" ? "Facebook" : "Nextdoor"}
                     </button>
                     <button
                       className="btn-ghost"
-                      onClick={() => connect(p, "managed_business_page")}
+                      onClick={() => connectManaged(p)}
                     >
                       Set up a Business Page for me
                     </button>

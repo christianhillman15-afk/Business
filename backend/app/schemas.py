@@ -192,6 +192,7 @@ class BroadcastOut(ORMModel):
     provider: AccountProvider
     body_text: str
     status: BroadcastStatus
+    scheduled_for: datetime | None
     posted_at: datetime | None
     created_at: datetime
 
@@ -205,6 +206,10 @@ class BroadcastEditRequest(BaseModel):
     body_text: str
 
 
+class BroadcastScheduleRequest(BaseModel):
+    scheduled_for: datetime
+
+
 class RecruitOut(ORMModel):
     id: int
     provider: AccountProvider
@@ -212,6 +217,15 @@ class RecruitOut(ORMModel):
     contact_name: str | None
     message_sent: bool
     trial_signup_at: datetime | None
+    created_at: datetime
+
+
+class NotificationOut(ORMModel):
+    id: int
+    kind: str
+    title: str
+    body: str
+    read: bool
     created_at: datetime
 
 

@@ -22,6 +22,7 @@ from ..models import (
     ResponseStatus,
     User,
 )
+from ..notifications import notify
 from ..schemas import AgentResponseOut, DraftEditRequest
 from ..services import remaining_quota
 
@@ -150,6 +151,24 @@ def _mark_posted(
         detail=f"lead={lead.id} provider={lead.provider.value}",
         request=request,
     )
+
+    verb = "posted" if audit == "response.post" else "marked as posted"
+    notify(
+        db,
+        user,
+        kind="reply_posted",
+        title=f"Reply {verb} on {lead.provider.value}",
+        body=f"Re: “{lead.content[:80]}…”",
+    )
+    if remaining_quota(db, user) == 0:
+        notify(
+            db,
+            user,
+            kind="quota_exhausted",
+            title="Daily post quota reached",
+            body="You've used today's posts. Your quota resets at midnight.",
+            email=True,
+        )
 
 
 @router.post("/{response_id}/reject", response_model=AgentResponseOut)

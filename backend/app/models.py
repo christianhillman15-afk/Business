@@ -251,7 +251,9 @@ class SupportMessage(Base):
 
 class BroadcastStatus(str, enum.Enum):
     draft = "draft"
+    scheduled = "scheduled"
     posted = "posted"
+    failed = "failed"
 
 
 class BroadcastPost(Base):
@@ -270,8 +272,21 @@ class BroadcastPost(Base):
     status: Mapped[BroadcastStatus] = mapped_column(
         Enum(BroadcastStatus), default=BroadcastStatus.draft
     )
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text, default="")
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
 class AuditLog(Base):

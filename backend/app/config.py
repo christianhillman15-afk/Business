@@ -34,11 +34,39 @@ class Settings(BaseSettings):
     leadpilot_scheduler_enabled: bool = False
     leadpilot_scheduler_interval_minutes: int = 30
 
+    # Email (transactional). Default "console" prints emails to the log.
+    email_backend: str = "console"  # console | smtp
+    email_from: str = "LeadPilot <no-reply@leadpilot.app>"
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+
+    # OAuth (official, no-password account connection). When client id/secret are
+    # set, the connect flow uses real OAuth; otherwise a simulated dev flow.
+    oauth_redirect_base: str = "http://localhost:8000"
+    meta_client_id: str | None = None
+    meta_client_secret: str | None = None
+    nextdoor_client_id: str | None = None
+    nextdoor_client_secret: str | None = None
+
+    # Business Post (broadcast) frequency guard — min hours between posts per
+    # platform (Nextdoor limits Business Posts; keep a safe default).
+    broadcast_min_interval_hours: int = 20
+
     # Billing
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
     # Optional map of plan_code -> Stripe price id (JSON or "code:price,code:price").
     stripe_prices: str | None = None
+
+    def oauth_configured(self, provider: str) -> bool:
+        if provider == "facebook":
+            return bool(self.meta_client_id and self.meta_client_secret)
+        if provider == "nextdoor":
+            return bool(self.nextdoor_client_id and self.nextdoor_client_secret)
+        return False
 
     @property
     def cors_origin_list(self) -> list[str]:

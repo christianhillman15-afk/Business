@@ -89,6 +89,23 @@ SQLite by default (zero-config dev). Set `DATABASE_URL` to a PostgreSQL DSN for
 production. Models are plain SQLAlchemy; add Alembic for migrations when moving
 beyond `create_all`.
 
+## Lifecycle & infra modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `email.py` | Transactional email (console default; SMTP/Mailgun when configured) |
+| `notifications.py` | In-app notifications + optional email; `notify` / `notify_admins` |
+| `routers/oauth.py` | Official OAuth connect (real when client id/secret set; simulated dev flow otherwise) |
+| `routers/notifications.py` | List / unread-count / mark-read endpoints |
+| `alembic/` | Database migrations (`alembic upgrade head`); Docker runs this on boot |
+
+Notifications fire on: welcome, plan/billing receipt, reply posted, quota
+exhausted, support escalation (to admins), and managed-page activation.
+
+Business Posts can be **scheduled** (`/api/broadcast/{id}/schedule`) and are
+published by the scheduler, subject to a per-platform **frequency guard**
+(`BROADCAST_MIN_INTERVAL_HOURS`) so you stay within Nextdoor's posting limits.
+
 ## Done since the first scaffold
 
 - **Argon2id** password hashing (PBKDF2 fallback kept for portability).
@@ -102,7 +119,6 @@ beyond `create_all`.
 
 ## Still recommended before production
 
-- Alembic migrations (currently `create_all`).
 - A durable job queue (Celery/RQ + Redis) if discovery volume grows beyond the
   in-process scheduler.
 - Rate limiting, structured logging, per-account pacing, and Meta app review for

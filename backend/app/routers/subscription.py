@@ -12,6 +12,7 @@ from ..billing import create_checkout, parse_webhook, stripe_enabled
 from ..database import get_db
 from ..deps import get_current_user, record_audit
 from ..models import Subscription, SubscriptionStatus, User
+from ..notifications import notify
 from ..plans import get_plan
 from ..schemas import SelectPlanRequest, SelectPlanResponse, SubscriptionOut
 
@@ -52,6 +53,15 @@ def select_plan(
     record_audit(
         db, "subscription.select", user_id=user.id, detail=plan.code, request=request
     )
+    if sub.status == SubscriptionStatus.active:
+        notify(
+            db,
+            user,
+            kind="billing",
+            title=f"You're on the {plan.name} plan",
+            body=f"${plan.price_monthly}/mo · {plan.daily_post_quota} AI posts per day.",
+            email=True,
+        )
     return SelectPlanResponse(subscription=sub, checkout_url=checkout_url)
 
 

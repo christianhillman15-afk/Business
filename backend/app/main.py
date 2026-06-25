@@ -14,6 +14,8 @@ from .routers import (
     auth,
     broadcast,
     leads,
+    notifications,
+    oauth,
     profile,
     responses,
     subscription,
@@ -63,6 +65,8 @@ for r in (
     broadcast.router,
     subscription.router,
     support.router,
+    notifications.router,
+    oauth.router,
     admin.router,
 ):
     app.include_router(r)

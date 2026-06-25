@@ -141,7 +141,17 @@ export interface Broadcast {
   id: number;
   provider: "facebook" | "nextdoor";
   body_text: string;
-  status: "draft" | "posted";
+  status: "draft" | "scheduled" | "posted" | "failed";
+  scheduled_for: string | null;
   posted_at: string | null;
+  created_at: string;
+}
+
+export interface Notification {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  read: boolean;
   created_at: string;
 }

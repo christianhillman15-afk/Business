@@ -2,8 +2,17 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
+
+
+def _fresh_provider(client: TestClient) -> dict:
+    email = f"u-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    tok = client.post(
+        "/api/auth/register", json={"email": email, "password": "password123"}
+    ).json()["access_token"]
+    return {"Authorization": f"Bearer {tok}"}
 
 
 def test_health(client: TestClient):
@@ -215,6 +224,64 @@ def test_broadcast_business_post(client: TestClient, provider_headers: dict):
     )
     assert pub.status_code == 200
     assert pub.json()["status"] == "posted"
+
+
+def test_notifications_lifecycle(client: TestClient):
+    h = _fresh_provider(client)
+    # Registration creates a welcome notification.
+    notes = client.get("/api/notifications", headers=h).json()
+    assert any(n["kind"] == "welcome" for n in notes)
+    assert client.get("/api/notifications/unread-count", headers=h).json()["unread"] >= 1
+    nid = notes[0]["id"]
+    assert client.post(f"/api/notifications/{nid}/read", headers=h).json()["read"] is True
+    client.post("/api/notifications/read-all", headers=h)
+    assert client.get("/api/notifications/unread-count", headers=h).json()["unread"] == 0
+
+
+def test_oauth_simulated_connect(client: TestClient):
+    h = _fresh_provider(client)
+    start = client.get("/api/accounts/oauth/facebook/start", headers=h).json()
+    assert start["simulated"] is True
+    qs = parse_qs(urlparse(start["authorize_url"]).query)
+    cb = client.get(
+        "/api/accounts/oauth/facebook/callback",
+        params={"code": "dev-simulated", "state": qs["state"][0], "simulated": 1},
+        follow_redirects=False,
+    )
+    assert cb.status_code == 303
+    accts = client.get("/api/accounts", headers=h).json()
+    assert any(
+        a["provider"] == "facebook" and a["auth_method"] == "oauth" for a in accts
+    )
+
+
+def test_broadcast_schedule(client: TestClient):
+    h = _fresh_provider(client)
+    post = client.post(
+        "/api/broadcast/draft", headers=h, json={"provider": "nextdoor"}
+    ).json()
+    sched = client.post(
+        f"/api/broadcast/{post['id']}/schedule",
+        headers=h,
+        json={"scheduled_for": "2030-01-01T12:00:00"},
+    )
+    assert sched.status_code == 200
+    assert sched.json()["status"] == "scheduled"
+    assert sched.json()["scheduled_for"] is not None
+
+
+def test_broadcast_frequency_guard(client: TestClient):
+    h = _fresh_provider(client)
+    first = client.post(
+        "/api/broadcast/draft", headers=h, json={"provider": "nextdoor"}
+    ).json()
+    assert client.post(f"/api/broadcast/{first['id']}/publish", headers=h).status_code == 200
+    # A second Business Post immediately after is blocked by the frequency guard.
+    second = client.post(
+        "/api/broadcast/draft", headers=h, json={"provider": "nextdoor"}
+    ).json()
+    blocked = client.post(f"/api/broadcast/{second['id']}/publish", headers=h)
+    assert blocked.status_code == 429
 
 
 def test_billing_select_mock(client: TestClient, provider_headers: dict):
