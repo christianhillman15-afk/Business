@@ -40,12 +40,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="hero-bg flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <h1 className="mb-1 text-center text-2xl font-bold text-brand-700">
-          Start your 7-day trial
-        </h1>
-        <p className="mb-6 text-center text-sm text-slate-500">
+        <Link
+          href="/"
+          className="mb-5 block text-center text-2xl font-extrabold tracking-tight text-white"
+        >
+          Lead<span className="text-fuchsia-500">Pilot</span>
+        </Link>
+        <p className="mb-6 text-center text-sm text-slate-400">
           AI-driven local leads for your service business
         </p>
         <form onSubmit={submit} className="card space-y-4">

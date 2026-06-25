@@ -40,7 +40,7 @@ export default function StartTrialPage() {
 
   if (done) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="hero-bg flex min-h-screen items-center justify-center px-4">
         <div className="card max-w-sm text-center">
           <div className="mb-2 text-3xl">📬</div>
           <h1 className="mb-1 text-xl font-bold">Check your email</h1>
@@ -54,12 +54,18 @@ export default function StartTrialPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="hero-bg flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        <h1 className="mb-1 text-center text-2xl font-bold text-brand-700">
+        <Link
+          href="/"
+          className="mb-5 block text-center text-2xl font-extrabold tracking-tight text-white"
+        >
+          Lead<span className="text-fuchsia-500">Pilot</span>
+        </Link>
+        <h1 className="mb-1 text-center text-2xl font-bold text-white">
           Start your 7-day free trial
         </h1>
-        <p className="mb-4 text-center text-sm text-slate-500">
+        <p className="mb-4 text-center text-sm text-slate-400">
           No card, no password. We&apos;ll email you a one-click sign-in link.
         </p>
         <p className="mb-6 rounded-md bg-brand-50 p-2 text-center text-sm text-brand-700">
