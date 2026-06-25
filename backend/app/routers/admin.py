@@ -21,15 +21,21 @@ from ..models import (
     User,
     UserRole,
 )
+from datetime import datetime, timezone
+
+from ..config import settings
+from ..email import send_email
 from ..notifications import notify
 from ..schemas import (
     AdminUserOut,
     AuditLogOut,
+    ConvertRecruitRequest,
     ManagedAccountOut,
     RecruitOut,
     TicketOut,
 )
-from ..services import run_recruiting
+from ..security import create_magic_token
+from ..services import create_trial_user, run_recruiting
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -164,6 +170,53 @@ def run_recruiting_pipeline(
     db: Session = Depends(get_db), _: User = Depends(require_admin)
 ):
     return run_recruiting(db)
+
+
+@router.post("/recruits/{recruit_id}/convert", response_model=RecruitOut)
+def convert_recruit(
+    recruit_id: int,
+    payload: ConvertRecruitRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Convert a recruited prospect into a passwordless trial customer and email
+    them a one-click sign-in link."""
+    recruit = db.get(OutreachRecruit, recruit_id)
+    if not recruit:
+        raise HTTPException(status_code=404, detail="Recruit not found")
+
+    user, created = create_trial_user(
+        db,
+        email=payload.email,
+        business_name=payload.business_name or recruit.contact_name,
+        phone=payload.phone,
+        nextdoor_handle=payload.nextdoor_handle or recruit.nextdoor_handle,
+        plan_code=payload.plan_code,
+        source="recruit",
+    )
+    recruit.email = payload.email
+    recruit.phone = payload.phone
+    recruit.nextdoor_handle = payload.nextdoor_handle or recruit.nextdoor_handle
+    recruit.converted_user_id = user.id
+    recruit.trial_signup_at = recruit.trial_signup_at or datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(recruit)
+
+    link = f"{settings.frontend_base_url}/auth/magic?token={create_magic_token(user.id)}"
+    send_email(
+        user.email,
+        "Your LeadPilot trial is ready",
+        f"Welcome! Click to sign in (valid 30 minutes):\n{link}",
+    )
+    if created:
+        notify(
+            db,
+            user,
+            kind="welcome",
+            title="Your LeadPilot trial is ready 🎉",
+            body="We've emailed you a one-click sign-in link.",
+        )
+    return recruit
 
 
 @router.post("/discovery/run-all")

@@ -35,6 +35,26 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class StartTrialRequest(BaseModel):
+    """Profile-based, passwordless trial signup (e.g. captured by the onboarding
+    AI after a prospect accepts a trial)."""
+
+    email: EmailStr
+    business_name: str | None = None
+    phone: str | None = None
+    nextdoor_handle: str | None = None
+    plan_code: str | None = None
+    recruit_id: int | None = None
+
+
+class MagicLinkRequest(BaseModel):
+    email: EmailStr
+
+
+class MagicVerifyRequest(BaseModel):
+    token: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -46,6 +66,9 @@ class UserOut(ORMModel):
     email: EmailStr
     role: UserRole
     business_name: str | None
+    phone: str | None
+    nextdoor_handle: str | None
+    onboarding_source: str
     timezone: str
     automation_enabled: bool
 
@@ -215,9 +238,21 @@ class RecruitOut(ORMModel):
     provider: AccountProvider
     profile_url: str | None
     contact_name: str | None
+    email: str | None
+    phone: str | None
+    nextdoor_handle: str | None
+    converted_user_id: int | None
     message_sent: bool
     trial_signup_at: datetime | None
     created_at: datetime
+
+
+class ConvertRecruitRequest(BaseModel):
+    email: EmailStr
+    business_name: str | None = None
+    phone: str | None = None
+    nextdoor_handle: str | None = None
+    plan_code: str | None = None
 
 
 class NotificationOut(ORMModel):

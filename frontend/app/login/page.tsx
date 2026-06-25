@@ -11,6 +11,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("demo1234");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [magicSent, setMagicSent] = useState(false);
+
+  async function sendMagicLink() {
+    setError(null);
+    if (!email) {
+      setError("Enter your email first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post("/api/auth/magic/request", { email });
+      setMagicSent(true);
+    } catch {
+      setMagicSent(true); // never reveal whether the email exists
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,13 +79,26 @@ export default function LoginPage() {
             />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {magicSent && (
+            <p className="rounded-md bg-green-50 p-2 text-center text-sm text-green-700">
+              If that email is registered, a one-click sign-in link is on its way.
+            </p>
+          )}
           <button className="btn-primary w-full" disabled={busy}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
+          <button
+            type="button"
+            className="btn-ghost w-full"
+            disabled={busy}
+            onClick={sendMagicLink}
+          >
+            Email me a sign-in link (no password)
+          </button>
           <p className="text-center text-sm text-slate-500">
-            No account?{" "}
-            <Link href="/register" className="text-brand-600 hover:underline">
-              Create one
+            New here?{" "}
+            <Link href="/start" className="text-brand-600 hover:underline">
+              Start a free trial
             </Link>
           </p>
         </form>

@@ -16,17 +16,61 @@ from .crypto import decrypt
 from .models import (
     AccountProvider,
     AgentResponse,
+    ClientPricingProfile,
     LeadMatch,
     LeadStatus,
     OutreachRecruit,
     ResponseStatus,
+    Subscription,
+    SubscriptionStatus,
     User,
+    UserRole,
 )
 from .plans import DEFAULT_PLAN_CODE, get_plan
 
 
 def _split(csv: str | None) -> list[str]:
     return [s.strip() for s in (csv or "").split(",") if s.strip()]
+
+
+def create_trial_user(
+    db: Session,
+    *,
+    email: str,
+    business_name: str | None = None,
+    phone: str | None = None,
+    nextdoor_handle: str | None = None,
+    plan_code: str | None = None,
+    source: str = "self",
+) -> tuple[User, bool]:
+    """Create a profile-based, passwordless trial account. Returns (user, created).
+
+    If a user with this email already exists, returns it unchanged.
+    """
+    existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if existing:
+        return existing, False
+
+    plan = get_plan(plan_code) or get_plan(DEFAULT_PLAN_CODE)
+    user = User(
+        email=email,
+        password_hash=None,  # passwordless — magic-link login
+        role=UserRole.provider,
+        business_name=business_name,
+        phone=phone,
+        nextdoor_handle=nextdoor_handle,
+        onboarding_source=source,
+    )
+    user.subscription = Subscription(
+        plan_code=plan.code if plan else DEFAULT_PLAN_CODE,
+        status=SubscriptionStatus.trialing,
+        trial_end=datetime.now(timezone.utc) + timedelta(days=7),
+    )
+    user.pricing_profile = ClientPricingProfile(phone=phone)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user, True
 
 
 def daily_quota(user: User) -> int:

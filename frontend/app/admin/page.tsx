@@ -33,6 +33,8 @@ interface Recruit {
   provider: string;
   contact_name: string | null;
   profile_url: string | null;
+  email: string | null;
+  converted_user_id: number | null;
   message_sent: boolean;
   trial_signup_at: string | null;
 }
@@ -88,6 +90,18 @@ export default function AdminPage() {
     setBusy(`activate-${id}`);
     try {
       await api.post(`/api/admin/accounts/${id}/activate`);
+      load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function convertRecruit(id: number) {
+    const email = window.prompt("Prospect's email to start their trial:");
+    if (!email) return;
+    setBusy(`convert-${id}`);
+    try {
+      await api.post(`/api/admin/recruits/${id}/convert`, { email });
       load();
     } finally {
       setBusy(null);
@@ -235,18 +249,23 @@ export default function AdminPage() {
                   {r.contact_name || r.profile_url}
                 </span>
                 <span className="flex items-center gap-2 text-xs">
-                  {r.trial_signup_at ? (
+                  {r.converted_user_id ? (
                     <span className="badge bg-green-100 text-green-700">
-                      Signed up
-                    </span>
-                  ) : r.message_sent ? (
-                    <span className="badge bg-brand-50 text-brand-700">
-                      Pitched
+                      Trial started{r.email ? ` · ${r.email}` : ""}
                     </span>
                   ) : (
-                    <span className="badge bg-slate-100 text-slate-500">
-                      Queued
-                    </span>
+                    <>
+                      <span className="badge bg-brand-50 text-brand-700">
+                        {r.message_sent ? "Pitched" : "Queued"}
+                      </span>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs"
+                        disabled={busy === `convert-${r.id}`}
+                        onClick={() => convertRecruit(r.id)}
+                      >
+                        {busy === `convert-${r.id}` ? "…" : "Convert → trial"}
+                      </button>
+                    </>
                   )}
                 </span>
               </div>

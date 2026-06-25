@@ -47,6 +47,26 @@ real identity/address; fabricated accounts are astroturfing — they get banned
 and create legal exposure. The managed **Business Page** is the legitimate way
 to give a client a presence without them sharing a login.
 
+## Recruiting & onboarding (no bots DMing people)
+
+The recruiting funnel turns prospects into trial customers — but **AI bots must
+not autonomously DM/start conversations with members on Nextdoor.** Nextdoor has
+no messaging API and bans automation; cold-DM bots get accounts banned and are
+spam. So the AI does everything *except* the prohibited cold outreach:
+
+1. **AI writes the invitation** → published as a Business Post / ad via the
+   official API (`ai/broadcaster.py`, `routers/broadcast.py`), with a trial link.
+2. **Prospect clicks the link** → the public trial page (`/start`).
+3. **AI/onboarding collects email + phone + Nextdoor handle** →
+   `POST /api/auth/start-trial` creates a **profile-based, passwordless** account
+   (`services.create_trial_user`).
+4. **One-click sign-in** → a magic link is emailed (no password to set/reset).
+
+The team can also convert a recruit directly:
+`POST /api/admin/recruits/{id}/convert`. Either way the person ends up in the
+system keyed to their Nextdoor profile, with the recruit record linked to the
+created account.
+
 ## How the architecture keeps you flexible
 
 Connectors implement a single interface (`connectors/base.py`):

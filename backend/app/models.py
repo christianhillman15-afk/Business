@@ -83,11 +83,16 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    # Nullable: profile-based accounts (recruited via trial) have no password and
+    # sign in with a magic link instead.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole), default=UserRole.provider
     )
     business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    nextdoor_handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    onboarding_source: Mapped[str] = mapped_column(String(40), default="self")
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
     automation_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
@@ -212,6 +217,13 @@ class OutreachRecruit(Base):
     provider: Mapped[AccountProvider] = mapped_column(Enum(AccountProvider))
     profile_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Contact details the onboarding AI collects when a prospect accepts a trial.
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    nextdoor_handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    converted_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     message_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     trial_signup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     dedup_key: Mapped[str] = mapped_column(String(128), index=True)

@@ -37,7 +37,9 @@ def hash_password(password: str) -> str:
     return f"pbkdf2_sha256${_PBKDF2_ROUNDS}${salt.hex()}${digest.hex()}"
 
 
-def verify_password(password: str, stored: str) -> bool:
+def verify_password(password: str, stored: str | None) -> bool:
+    if not stored:  # passwordless (magic-link) account
+        return False
     if stored.startswith("$argon2"):
         if _ph is None:
             return False
@@ -75,4 +77,26 @@ def decode_access_token(token: str) -> dict | None:
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[_ALGO])
     except jwt.PyJWTError:
+        return None
+
+
+def create_magic_token(user_id: int, *, minutes: int = 30) -> str:
+    """A short-lived, single-purpose token emailed as a one-click login link."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "purpose": "magic",
+        "iat": now,
+        "exp": now + timedelta(minutes=minutes),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=_ALGO)
+
+
+def verify_magic_token(token: str) -> int | None:
+    payload = decode_access_token(token)
+    if not payload or payload.get("purpose") != "magic":
+        return None
+    try:
+        return int(payload["sub"])
+    except (KeyError, ValueError):
         return None

@@ -173,6 +173,64 @@ def test_admin_provisioning_and_activate(client: TestClient, admin_headers: dict
     assert act.json()["health"] == "healthy"
 
 
+def test_passwordless_trial_and_magic_login(client: TestClient, admin_headers: dict):
+    from app.security import create_magic_token
+
+    email = f"trial-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    r = client.post(
+        "/api/auth/start-trial",
+        json={
+            "email": email,
+            "business_name": "Pipes R Us",
+            "phone": "(555) 100-2000",
+            "nextdoor_handle": "pipesrus",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["created"] is True
+    # Idempotent: same email doesn't duplicate.
+    again = client.post("/api/auth/start-trial", json={"email": email})
+    assert again.json()["created"] is False
+
+    # Magic-link request always 200 (no account enumeration).
+    assert client.post("/api/auth/magic/request", json={"email": email}).status_code == 200
+
+    # Find the user id (admin) and verify a magic token logs in with no password.
+    users = client.get("/api/admin/users", headers=admin_headers).json()
+    uid = next(u["id"] for u in users if u["email"] == email)
+    bad = client.post("/api/auth/magic/verify", json={"token": "nope"})
+    assert bad.status_code == 400
+    good = client.post(
+        "/api/auth/magic/verify", json={"token": create_magic_token(uid)}
+    )
+    assert good.status_code == 200
+    me = client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {good.json()['access_token']}"},
+    ).json()
+    assert me["email"] == email
+    assert me["nextdoor_handle"] == "pipesrus"
+    assert me["onboarding_source"] == "trial_page"
+
+
+def test_convert_recruit_to_trial(client: TestClient, admin_headers: dict):
+    recruits = client.post("/api/admin/recruiting/run", headers=admin_headers).json()
+    if not recruits:
+        recruits = client.get("/api/admin/recruits", headers=admin_headers).json()
+    rid = recruits[0]["id"]
+    email = f"recruit-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    res = client.post(
+        f"/api/admin/recruits/{rid}/convert",
+        headers=admin_headers,
+        json={"email": email, "phone": "(555) 222-3333"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["converted_user_id"] is not None
+    assert body["email"] == email
+    assert body["trial_signup_at"] is not None
+
+
 def test_capabilities(client: TestClient, provider_headers: dict):
     caps = client.get("/api/capabilities", headers=provider_headers).json()
     # Facebook can auto-reply; Nextdoor cannot (no reply API).

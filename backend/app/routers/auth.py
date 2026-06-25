@@ -16,10 +16,28 @@ from ..models import (
     User,
     UserRole,
 )
+from ..config import settings
+from ..email import send_email
+from ..models import OutreachRecruit
 from ..notifications import notify
 from ..plans import DEFAULT_PLAN_CODE, get_plan
-from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
-from ..security import create_access_token, hash_password, verify_password
+from ..schemas import (
+    LoginRequest,
+    MagicLinkRequest,
+    MagicVerifyRequest,
+    RegisterRequest,
+    StartTrialRequest,
+    TokenResponse,
+    UserOut,
+)
+from ..security import (
+    create_access_token,
+    create_magic_token,
+    hash_password,
+    verify_magic_token,
+    verify_password,
+)
+from ..services import create_trial_user
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -79,6 +97,89 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     record_audit(db, "user.login", user_id=user.id, request=request)
     token = create_access_token(str(user.id), user.role.value)
     return TokenResponse(access_token=token)
+
+
+def _send_magic_link(user: User, *, new_account: bool) -> None:
+    token = create_magic_token(user.id)
+    link = f"{settings.frontend_base_url}/auth/magic?token={token}"
+    subject = (
+        "Welcome to LeadPilot — your sign-in link"
+        if new_account
+        else "Your LeadPilot sign-in link"
+    )
+    send_email(
+        user.email,
+        subject,
+        f"Click to sign in (valid 30 minutes):\n{link}",
+    )
+
+
+@router.post("/start-trial", status_code=201)
+def start_trial(
+    payload: StartTrialRequest, request: Request, db: Session = Depends(get_db)
+):
+    """Profile-based, passwordless trial signup.
+
+    This is the endpoint the onboarding flow (or the public trial page) calls
+    once a prospect provides their email/phone — the person is now in the system
+    keyed to their Nextdoor profile, and gets a one-click sign-in link by email.
+    """
+    user, created = create_trial_user(
+        db,
+        email=payload.email,
+        business_name=payload.business_name,
+        phone=payload.phone,
+        nextdoor_handle=payload.nextdoor_handle,
+        plan_code=payload.plan_code,
+        source="recruit" if payload.recruit_id else "trial_page",
+    )
+
+    if payload.recruit_id:
+        recruit = db.get(OutreachRecruit, payload.recruit_id)
+        if recruit:
+            recruit.email = payload.email
+            recruit.phone = payload.phone
+            recruit.nextdoor_handle = payload.nextdoor_handle
+            recruit.converted_user_id = user.id
+            recruit.trial_signup_at = recruit.trial_signup_at or datetime.now(
+                timezone.utc
+            )
+            db.commit()
+
+    if created:
+        record_audit(
+            db, "trial.start", user_id=user.id, detail=user.email, request=request
+        )
+        notify(
+            db,
+            user,
+            kind="welcome",
+            title="Your LeadPilot trial is ready 🎉",
+            body="We've emailed you a one-click sign-in link to get started.",
+        )
+    _send_magic_link(user, new_account=created)
+    return {"ok": True, "created": created}
+
+
+@router.post("/magic/request")
+def magic_request(payload: MagicLinkRequest, db: Session = Depends(get_db)):
+    """Email a one-click sign-in link (passwordless login). Always 200 so we
+    don't reveal whether an email is registered."""
+    user = db.execute(
+        select(User).where(User.email == payload.email)
+    ).scalar_one_or_none()
+    if user:
+        _send_magic_link(user, new_account=False)
+    return {"ok": True}
+
+
+@router.post("/magic/verify", response_model=TokenResponse)
+def magic_verify(payload: MagicVerifyRequest, db: Session = Depends(get_db)):
+    user_id = verify_magic_token(payload.token)
+    user = db.get(User, user_id) if user_id else None
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired link")
+    return TokenResponse(access_token=create_access_token(str(user.id), user.role.value))
 
 
 @router.get("/me", response_model=UserOut)
