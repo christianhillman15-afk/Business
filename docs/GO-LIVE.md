@@ -49,11 +49,22 @@ real-world setup (accounts, keys, approvals), not code.
       (`solo:price_…,starter:price_…,…`).
 - [ ] Test: pick a plan → complete Stripe Checkout → subscription flips to active.
 
-## Phase 5 — Email (transactional)
-- [ ] Create an email provider account (Mailgun / Amazon SES / Postmark).
-- [ ] Add the SPF/DKIM DNS records they give you (so mail isn't spam-filtered).
-- [ ] Set backend `EMAIL_BACKEND=smtp`, `EMAIL_FROM`, and `SMTP_HOST/PORT/USER/
-      PASSWORD/USE_TLS`.
+## Phase 5 — Email (transactional) — using Zoho
+You can run both the **app's automated emails** and your **business inboxes**
+(`support@`, etc.) through Zoho. No code change — the app sends over SMTP.
+
+- [ ] **Business inboxes:** add your domain to **Zoho Mail**, verify it, and
+      create `support@`, `privacy@`, `no-reply@`.
+- [ ] **App/transactional email:** in **ZeptoMail** (Zoho's transactional
+      service — best deliverability), add + verify your domain and generate a
+      **Send Mail token**.
+- [ ] Add the **SPF + DKIM** DNS records Zoho/ZeptoMail give you.
+- [ ] Set backend env:
+      `EMAIL_BACKEND=smtp`, `SMTP_HOST=smtp.zeptomail.com`, `SMTP_PORT=587`,
+      `SMTP_USER=emailapikey`, `SMTP_PASSWORD=<send token>`, `SMTP_USE_TLS=true`,
+      `EMAIL_FROM=LeadPilot <no-reply@yourdomain.com>`.
+      (EU/IN regions: `smtp.zeptomail.eu` / `.in`. Plain Zoho Mail SMTP —
+      `smtp.zoho.com:587` with your mailbox login — also works for low volume.)
 - [ ] Test: start a trial → confirm the welcome + magic-link email arrives.
 
 ## Phase 6 — Platform API access (start early — weeks)
