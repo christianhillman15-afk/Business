@@ -114,19 +114,6 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* Problem / agitation */}
-      <section className="section py-20 text-center">
-        <h2 className="mx-auto max-w-3xl text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
-          Lead sites sell the same lead to{" "}
-          <span className="text-fuchsia-600">five of your competitors.</span>
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">
-          Meanwhile, your actual neighbors are posting “who do you recommend?”
-          every single day — for free. The problem isn&apos;t demand. It&apos;s
-          that you can&apos;t watch every feed all day. We can.
-        </p>
-      </section>
-
       {/* How it works */}
       <section id="how" className="bg-slate-50 py-20">
         <div className="section">
