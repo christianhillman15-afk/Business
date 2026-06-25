@@ -160,6 +160,7 @@ class QuotaOut(BaseModel):
     daily_quota: int
     used_today: int
     remaining_today: int
+    on_trial: bool = False
 
 
 class DraftEditRequest(BaseModel):

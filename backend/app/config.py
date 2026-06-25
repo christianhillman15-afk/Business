@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # platform (Nextdoor limits Business Posts; keep a safe default).
     broadcast_min_interval_hours: int = 20
 
+    # Free trials are capped to this many AI replies/day regardless of plan.
+    trial_daily_post_quota: int = 1
+
     # Billing
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None

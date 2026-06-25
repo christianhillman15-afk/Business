@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { api, Plan } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export default function StartTrialPage() {
   const [form, setForm] = useState({
@@ -10,16 +10,10 @@ export default function StartTrialPage() {
     email: "",
     phone: "",
     nextdoor_handle: "",
-    plan_code: "growth",
   });
-  const [plans, setPlans] = useState<Plan[]>([]);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.get<Plan[]>("/api/plans").then(setPlans).catch(() => {});
-  }, []);
 
   function set(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -35,7 +29,6 @@ export default function StartTrialPage() {
         business_name: form.business_name || null,
         phone: form.phone || null,
         nextdoor_handle: form.nextdoor_handle || null,
-        plan_code: form.plan_code,
       });
       setDone(true);
     } catch (err) {
@@ -66,8 +59,12 @@ export default function StartTrialPage() {
         <h1 className="mb-1 text-center text-2xl font-bold text-brand-700">
           Start your 7-day free trial
         </h1>
-        <p className="mb-6 text-center text-sm text-slate-500">
+        <p className="mb-4 text-center text-sm text-slate-500">
           No card, no password. We&apos;ll email you a one-click sign-in link.
+        </p>
+        <p className="mb-6 rounded-md bg-brand-50 p-2 text-center text-sm text-brand-700">
+          Your free trial includes <strong>1 AI reply per day</strong>. Pick a
+          paid plan anytime for more.
         </p>
         <form onSubmit={submit} className="card space-y-4">
           <div>
@@ -106,20 +103,6 @@ export default function StartTrialPage() {
               onChange={(e) => set("nextdoor_handle", e.target.value)}
               placeholder="your Nextdoor profile / neighborhood"
             />
-          </div>
-          <div>
-            <label className="label">Plan</label>
-            <select
-              className="input"
-              value={form.plan_code}
-              onChange={(e) => set("plan_code", e.target.value)}
-            >
-              {plans.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.name} — ${p.price_monthly}/mo · {p.daily_post_quota}/day
-                </option>
-              ))}
-            </select>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button className="btn-primary w-full" disabled={busy}>

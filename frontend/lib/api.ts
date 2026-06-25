@@ -102,6 +102,7 @@ export interface Quota {
   daily_quota: number;
   used_today: number;
   remaining_today: number;
+  on_trial: boolean;
 }
 
 export interface Plan {

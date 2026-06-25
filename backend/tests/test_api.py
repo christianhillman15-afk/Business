@@ -231,6 +231,13 @@ def test_convert_recruit_to_trial(client: TestClient, admin_headers: dict):
     assert body["trial_signup_at"] is not None
 
 
+def test_trial_quota_is_one_per_day(client: TestClient):
+    h = _fresh_provider(client)  # new accounts start on a trial
+    q = client.get("/api/leads/quota", headers=h).json()
+    assert q["on_trial"] is True
+    assert q["daily_quota"] == 1
+
+
 def test_capabilities(client: TestClient, provider_headers: dict):
     caps = client.get("/api/capabilities", headers=provider_headers).json()
     # Facebook can auto-reply; Nextdoor cannot (no reply API).

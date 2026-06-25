@@ -11,6 +11,7 @@ import hashlib
 from .ai.drafter import draft_reply
 from .ai.matcher import classify_lead
 from .ai.recruiter import generate_pitch
+from .config import settings
 from .connectors import connector_for
 from .crypto import decrypt
 from .models import (
@@ -92,7 +93,18 @@ def create_trial_user(
     return user, True
 
 
+def on_trial(user: User) -> bool:
+    return bool(
+        user.subscription
+        and user.subscription.status == SubscriptionStatus.trialing
+    )
+
+
 def daily_quota(user: User) -> int:
+    # During the free trial, everyone is capped to a single reply per day,
+    # regardless of the plan they selected for after the trial.
+    if on_trial(user):
+        return settings.trial_daily_post_quota
     plan = get_plan(user.subscription.plan_code if user.subscription else None)
     plan = plan or get_plan(DEFAULT_PLAN_CODE)
     return plan.daily_post_quota if plan else 4

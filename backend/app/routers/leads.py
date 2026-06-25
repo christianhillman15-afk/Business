@@ -9,7 +9,7 @@ from ..database import get_db
 from ..deps import get_current_user, require_active_user
 from ..models import LeadMatch, LeadStatus, User
 from ..schemas import LeadOut, QuotaOut
-from ..services import daily_quota, posts_used_today, run_discovery
+from ..services import daily_quota, on_trial, posts_used_today, run_discovery
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 
@@ -47,6 +47,7 @@ def quota(user: User = Depends(get_current_user), db: Session = Depends(get_db))
         daily_quota=limit,
         used_today=used,
         remaining_today=max(0, limit - used),
+        on_trial=on_trial(user),
     )
 
 

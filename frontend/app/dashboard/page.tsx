@@ -113,7 +113,10 @@ export default function DashboardPage() {
       )}
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Plan" value={quota?.plan_code ?? "—"} />
+        <Stat
+          label="Plan"
+          value={quota ? (quota.on_trial ? "Free trial" : quota.plan_code) : "—"}
+        />
         <Stat
           label="Daily quota"
           value={quota ? `${quota.daily_quota}` : "—"}
