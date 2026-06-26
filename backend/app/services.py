@@ -14,6 +14,7 @@ from .ai.recruiter import generate_pitch
 from .config import settings
 from .connectors import connector_for
 from .crypto import decrypt
+from .sms import send_sms
 from .models import (
     AccountProvider,
     AgentResponse,
@@ -161,6 +162,7 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
         targets = {p: decrypt(a.encrypted_session) for p, a in accounts.items()}
 
     created: list[LeadMatch] = []
+    pending_sms: list[tuple[LeadMatch, str]] = []
     for provider_value, credential in targets.items():
         connector = connector_for(provider_value, credential=credential)
         for cand in connector.discover(neighborhoods=neighborhoods, limit=limit):
@@ -197,10 +199,27 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
                 text = draft_reply(lead, profile)
                 db.add(AgentResponse(lead_id=lead.id, generated_text=text))
                 lead.status = LeadStatus.drafted
+                pending_sms.append((lead, text))
 
             created.append(lead)
 
     db.commit()
+
+    # Text the customer each new lead, with the AI reply as a separate message
+    # so it's a one-tap copy on their phone.
+    if user.phone and user.sms_enabled:
+        for lead, text in pending_sms:
+            location = f" • {lead.location}" if lead.location else ""
+            link = f"\nOpen: {lead.post_url}" if lead.post_url else ""
+            send_sms(
+                user.phone,
+                f"🔔 New {lead.provider.value} lead{location}\n"
+                f"“{lead.content[:200]}”\n"
+                f"Your reply is in the next text — just copy & paste.{link}",
+            )
+            # Reply on its own so the whole message can be copied cleanly.
+            send_sms(user.phone, text)
+
     return created
 
 

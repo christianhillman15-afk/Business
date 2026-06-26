@@ -238,6 +238,39 @@ def test_trial_quota_is_one_per_day(client: TestClient):
     assert q["daily_quota"] == 1
 
 
+def test_sms_console_send():
+    from app.sms import send_sms
+
+    assert send_sms("+15551234567", "hello") is True
+    assert send_sms(None, "no recipient") is False
+
+
+def test_leads_texted_on_discovery(client: TestClient, monkeypatch):
+    import app.services as services
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(services, "send_sms", lambda to, body: sent.append((to, body)) or True)
+
+    h = _fresh_provider(client)
+    # Give them a phone (SMS is on by default).
+    client.patch("/api/account", headers=h, json={"phone": "(555) 100-2000"})
+    leads = client.post("/api/leads/discover", headers=h).json()
+    drafted = [l for l in leads if l["status"] == "drafted"]
+
+    # Two texts per drafted lead: the lead, then the reply on its own.
+    assert len(sent) == 2 * len(drafted)
+    if drafted:
+        # Every other message is a bare reply (easy to copy) with no header.
+        assert any("🔔 New" in body for _, body in sent)
+
+
+def test_toggle_sms_off(client: TestClient, provider_headers: dict):
+    me = client.patch(
+        "/api/account", headers=provider_headers, json={"sms_enabled": False}
+    ).json()
+    assert me["sms_enabled"] is False
+
+
 def test_capabilities(client: TestClient, provider_headers: dict):
     caps = client.get("/api/capabilities", headers=provider_headers).json()
     # Facebook can auto-reply; Nextdoor cannot (no reply API).

@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     leadpilot_scheduler_enabled: bool = False
     leadpilot_scheduler_interval_minutes: int = 30
 
+    # SMS (lead alerts). Default "console" logs messages; "twilio" sends them.
+    sms_backend: str = "console"  # console | twilio
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_from_number: str | None = None
+
     # Email (transactional). Default "console" prints emails to the log.
     email_backend: str = "console"  # console | smtp
     email_from: str = "LeadPilot <no-reply@leadpilot.app>"

@@ -24,6 +24,7 @@ export default function SettingsPage() {
     phone: "",
     nextdoor_handle: "",
     timezone: "America/New_York",
+    sms_enabled: true,
   });
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [pw, setPw] = useState({ current_password: "", new_password: "" });
@@ -36,6 +37,7 @@ export default function SettingsPage() {
         phone: user.phone ?? "",
         nextdoor_handle: user.nextdoor_handle ?? "",
         timezone: user.timezone,
+        sms_enabled: user.sms_enabled,
       });
     }
   }, [user]);
@@ -134,6 +136,23 @@ export default function SettingsPage() {
                 ))}
               </select>
             </div>
+            <label className="flex items-start gap-3 rounded-lg border border-slate-200 p-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.sms_enabled}
+                onChange={(e) =>
+                  setForm({ ...form, sms_enabled: e.target.checked })
+                }
+              />
+              <span className="text-sm text-slate-700">
+                <span className="font-medium">Text me new leads</span>
+                <span className="block text-slate-500">
+                  Each new lead is texted to your phone above, with the AI reply
+                  sent as a separate message so it&apos;s easy to copy and paste.
+                </span>
+              </span>
+            </label>
             <div className="flex items-center gap-3">
               <button className="btn-primary">Save</button>
               {savedMsg && (

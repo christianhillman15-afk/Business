@@ -27,6 +27,8 @@ def update_account(
         user.timezone = payload.timezone
     if payload.nextdoor_handle is not None:
         user.nextdoor_handle = payload.nextdoor_handle
+    if payload.sms_enabled is not None:
+        user.sms_enabled = payload.sms_enabled
     db.commit()
     db.refresh(user)
     return user

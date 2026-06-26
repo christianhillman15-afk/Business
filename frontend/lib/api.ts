@@ -74,6 +74,7 @@ export interface User {
   onboarding_source: string;
   timezone: string;
   automation_enabled: boolean;
+  sms_enabled: boolean;
 }
 
 export interface AgentResponse {

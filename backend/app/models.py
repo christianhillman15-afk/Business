@@ -95,6 +95,7 @@ class User(Base):
     onboarding_source: Mapped[str] = mapped_column(String(40), default="self")
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
     automation_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     subscription: Mapped["Subscription"] = relationship(

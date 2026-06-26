@@ -71,6 +71,7 @@ class UserOut(ORMModel):
     onboarding_source: str
     timezone: str
     automation_enabled: bool
+    sms_enabled: bool
 
 
 class SubscriptionOut(ORMModel):
@@ -84,6 +85,7 @@ class AccountUpdateRequest(BaseModel):
     phone: str | None = None
     timezone: str | None = None
     nextdoor_handle: str | None = None
+    sms_enabled: bool | None = None
 
 
 class PasswordSetRequest(BaseModel):
