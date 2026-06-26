@@ -38,6 +38,24 @@ const PLANS: Plan[] = [
   { code: "scale", name: "Scale", price_monthly: 400, daily_post_quota: 8 },
 ];
 
+const SUPPORT_SUGGESTIONS = [
+  "How does LeadPilot find me leads?",
+  "How do I get leads by text?",
+  "What does it cost?",
+  "How do I connect Nextdoor?",
+  "Why am I not getting leads yet?",
+  "Can I edit a reply before it posts?",
+  "How do I talk to my bot by text?",
+  "How do I cancel or change plans?",
+];
+
+function plansBlurb() {
+  return PLANS.map(
+    (p) =>
+      `${p.name} $${p.price_monthly}/mo (up to ${p.daily_post_quota}/day)`,
+  ).join("; ");
+}
+
 function makeResponse(id: number, text: string) {
   return { id, generated_text: text, status: "draft" as const, posted_at: null };
 }
@@ -490,27 +508,49 @@ function route(method: string, path: string, body: any): unknown {
     return { ok: true };
   }
 
-  // --- support chatbot ----------------------------------------------------
+  // --- support assistant --------------------------------------------------
+  if (path === "/api/support/suggestions")
+    return { suggestions: SUPPORT_SUGGESTIONS };
   if (path === "/api/support/chat" && method === "POST") {
-    const msg: string = (body?.message ?? "").toLowerCase();
-    const escalated = /refund|cancel|human|charge|dispute/.test(msg);
-    let reply =
-      "Thanks for reaching out! In LeadPilot, our AI scans local Nextdoor and Facebook feeds for posts in your trade, drafts a reply with your services, pricing and phone number, and texts each lead to you. You approve before anything posts.";
-    if (msg.includes("price") || msg.includes("plan") || msg.includes("cost"))
+    const t: string = (body?.message ?? "").toLowerCase();
+    const has = (...w: string[]) => w.some((x) => t.includes(x));
+    const escalated =
+      /refund|cancel my|charged twice|double charge|speak to (someone|a person)|human|dispute|lawsuit|legal|complaint|banned|suspended/.test(
+        t,
+      );
+    let reply: string;
+    if (has("text", "sms", "message") && has("bot", "you", "talk", "ask", "question"))
       reply =
-        "Plans are billed monthly by how many replies you want per day: Solo $200 (1/day), Starter $250 (2), Growth $300 (4), Pro $350 (6), Scale $400 (8). Every plan starts with a 7-day free trial — one lead a day, on us.";
-    else if (msg.includes("nextdoor"))
+        "You can text me anytime at your LeadPilot number — ask things like “what's my plan?”, “how many leads today?”, or “how do I connect Facebook?” and I'll text right back. Same assistant as this chat, just over SMS, so you never have to log in.";
+    else if (has("text", "sms") || (has("lead", "post") && has("notify", "alert", "send")))
       reply =
-        "On Nextdoor, replying to other people's posts has no public API, so we draft the reply and you post it with one tap (the dashboard has Copy reply + Open post). We can also publish your own Business Posts through Nextdoor's official API.";
-    else if (msg.includes("connect") || msg.includes("account"))
+        "Every time the bot finds a job in your trade, it texts you two messages: one with the post and its link, and a second with the suggested reply by itself so you can copy-paste it in one tap. Keep “Text me new leads” on in Settings and make sure your phone number is right.";
+    else if (has("find", "how does", "how do you", "discover", "work"))
       reply =
-        "You can connect with the platform's official authorize button (no password is ever shared with us), or have us set up a managed Business Page for you. Head to Setup to connect.";
-    else if (msg.includes("quota") || msg.includes("daily"))
+        "I watch local Nextdoor and Facebook groups for neighbors asking for the kind of work you do, then write a ready-to-send reply with your services, pricing, and phone number. You approve before anything posts — and I text every lead to you. Set your trade under Setup, then tap “Scan for leads.”";
+    else if (has("connect", "facebook", "nextdoor", "account", "link"))
       reply =
-        "Your daily quota is the number of AI replies that can post per day on your plan. You're on Growth: 4 replies/day. It resets at local midnight in your timezone.";
+        "Head to Setup → Connect accounts. Use the official “Connect” button (no password is ever shared with us) or pick “Set up a Business Page for me.” A green badge means you're connected. On Nextdoor I draft replies for you to post in one tap; on Facebook I can post for you automatically.";
+    else if (has("price", "plan", "cost", "how much", "billing"))
+      reply = `Plans are billed monthly by your daily reply limit (an “up to” cap): ${plansBlurb()}. Every plan starts with a 7-day free trial — 1 reply/day, no card. Change plans anytime under Billing.`;
+    else if (has("quota", "limit", "how many", "per day", "daily"))
+      reply =
+        "Your plan sets how many AI replies can post per day — it's an “up to” cap, since some days have fewer in-field leads. It resets at midnight in your local timezone, and I'll alert you when you're out. You're on Growth: up to 4/day.";
+    else if (has("edit", "approve", "decline", "don't post", "change the reply"))
+      reply =
+        "You're always in control. On each lead you can tap Edit to tweak the wording, Approve & post (or “I posted it” for Nextdoor), or Decline. Nothing goes out without your okay.";
+    else if (has("not getting", "no leads", "why am i not", "isn't working", "not working"))
+      reply =
+        "Let's get you leads. Check that (1) your Trade and Service categories are filled in under Setup, (2) your target neighborhoods are set, (3) an account is connected, and (4) you still have quota today. Then tap “Scan for leads.” Want me to walk through any of these?";
+    else if (has("trial", "free"))
+      reply =
+        "The free trial runs 7 days with 1 AI reply per day — no card needed. Sign-in is a one-click email link, so there's no password to remember. Pick a paid plan whenever you're ready.";
+    else
+      reply =
+        "Happy to help! I can explain how leads work, getting leads by text, pricing, connecting Nextdoor or Facebook, your daily limit, or billing. What would you like to know?";
     if (escalated)
       reply =
-        "I've noted this and looped in a human on our team — someone will follow up by email. Is there anything else I can help with in the meantime?";
+        "I've noted this and I'm looping in a teammate who can help — they'll follow up by email shortly. Anything else I can do in the meantime?";
     return { ticket_id: 1, reply, escalated };
   }
 

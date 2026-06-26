@@ -19,6 +19,7 @@ from .routers import (
     oauth,
     profile,
     responses,
+    sms,
     subscription,
     support,
 )
@@ -67,6 +68,7 @@ for r in (
     broadcast.router,
     subscription.router,
     support.router,
+    sms.router,
     notifications.router,
     oauth.router,
     admin.router,

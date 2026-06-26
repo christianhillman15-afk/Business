@@ -212,14 +212,15 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
     if user.phone and user.sms_enabled:
         for lead, text in pending_sms:
             location = f" • {lead.location}" if lead.location else ""
-            link = f"\nOpen: {lead.post_url}" if lead.post_url else ""
+            link = f"\n{lead.post_url}" if lead.post_url else ""
+            # Message 1: the lead + the link to the post.
             send_sms(
                 user.phone,
                 f"🔔 New {lead.provider.value} lead{location}\n"
-                f"“{lead.content[:200]}”\n"
-                f"Your reply is in the next text — just copy & paste.{link}",
+                f"“{lead.content[:180]}”{link}\n"
+                f"👉 Suggested reply coming in the next text — copy & paste it.",
             )
-            # Reply on its own so the whole message can be copied cleanly.
+            # Message 2: the suggested reply by itself, for a clean one-tap copy.
             send_sms(user.phone, text)
 
     return created

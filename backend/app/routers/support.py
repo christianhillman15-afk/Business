@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..ai.support import answer, should_escalate
+from ..ai.support import answer, should_escalate, suggested_questions
 from ..database import get_db
 from ..deps import get_current_user
 from ..models import SupportMessage, SupportTicket, TicketStatus, User
@@ -13,6 +13,12 @@ from ..notifications import notify_admins
 from ..schemas import SupportChatRequest, SupportChatResponse, TicketOut
 
 router = APIRouter(prefix="/api/support", tags=["support"])
+
+
+@router.get("/suggestions")
+def suggestions(user: User = Depends(get_current_user)) -> dict:
+    """One-tap starter questions for the chat UI."""
+    return {"suggestions": suggested_questions()}
 
 
 @router.get("/tickets", response_model=list[TicketOut])

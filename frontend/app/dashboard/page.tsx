@@ -275,8 +275,16 @@ function LeadCard({
 
       {lead.response && (
         <div className="mt-3 rounded-lg bg-slate-50 p-3">
-          <div className="mb-1 text-xs font-medium text-slate-500">
-            AI draft reply
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-slate-500">
+              AI draft reply
+            </span>
+            <span
+              className="text-[11px] font-medium text-green-600"
+              title="The post link and this suggested reply were texted to your phone as two separate messages."
+            >
+              📱 Texted to you
+            </span>
           </div>
           {editing ? (
             <textarea

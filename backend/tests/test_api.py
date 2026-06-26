@@ -456,3 +456,47 @@ def test_billing_select_mock(client: TestClient, provider_headers: dict):
     assert body["subscription"]["plan_code"] == "pro"
     assert body["subscription"]["status"] == "active"
     assert body["checkout_url"] is None  # mock provider
+
+
+def test_support_suggestions(client: TestClient, provider_headers: dict):
+    res = client.get("/api/support/suggestions", headers=provider_headers)
+    assert res.status_code == 200
+    suggestions = res.json()["suggestions"]
+    assert isinstance(suggestions, list) and len(suggestions) >= 3
+
+
+def test_sms_inbound_known_number_answers(client: TestClient):
+    h = _fresh_provider(client)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 770-1234"})
+    res = client.post(
+        "/api/sms/inbound",
+        data={"From": "+15557701234", "Body": "what does it cost?"},
+    )
+    assert res.status_code == 200
+    assert "<Message>" in res.text
+    assert "$" in res.text  # pricing answer includes a dollar figure
+
+
+def test_sms_inbound_unknown_number_prompts_linking(client: TestClient):
+    res = client.post(
+        "/api/sms/inbound",
+        data={"From": "+19998887777", "Body": "hello"},
+    )
+    assert res.status_code == 200
+    assert "isn't linked" in res.text
+
+
+def test_sms_inbound_two_way_remembers_conversation(client: TestClient):
+    h = _fresh_provider(client)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 770-9999"})
+    # Two texts from the same number should reuse the running conversation.
+    client.post(
+        "/api/sms/inbound",
+        data={"From": "+15557709999", "Body": "how do I get leads by text?"},
+    )
+    second = client.post(
+        "/api/sms/inbound",
+        data={"From": "+15557709999", "Body": "and how much does it cost?"},
+    )
+    assert second.status_code == 200
+    assert "<Message>" in second.text

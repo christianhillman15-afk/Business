@@ -15,6 +15,14 @@ from .config import settings
 logger = logging.getLogger("leadpilot.sms")
 
 
+def normalize_phone(phone: str | None) -> str:
+    """Reduce a phone number to comparable digits (last 10, ignoring +1/format)."""
+    if not phone:
+        return ""
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
 def sms_configured() -> bool:
     return settings.sms_backend == "twilio" and bool(
         settings.twilio_account_sid
