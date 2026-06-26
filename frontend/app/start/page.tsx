@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { api, setToken } from "@/lib/api";
+import { DEMO } from "@/lib/demo";
 
 export default function StartTrialPage() {
+  const router = useRouter();
   const [form, setForm] = useState({
     business_name: "",
     email: "",
@@ -24,12 +27,22 @@ export default function StartTrialPage() {
     setBusy(true);
     setError(null);
     try {
-      await api.post("/api/auth/start-trial", {
-        email: form.email,
-        business_name: form.business_name || null,
-        phone: form.phone || null,
-        nextdoor_handle: form.nextdoor_handle || null,
-      });
+      const res = await api.post<{ access_token?: string }>(
+        "/api/auth/start-trial",
+        {
+          email: form.email,
+          business_name: form.business_name || null,
+          phone: form.phone || null,
+          nextdoor_handle: form.nextdoor_handle || null,
+        },
+      );
+      // In the static demo there is no email to click — drop straight into the
+      // product so the shared link is fully explorable.
+      if (DEMO && res?.access_token) {
+        setToken(res.access_token);
+        router.push("/dashboard");
+        return;
+      }
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

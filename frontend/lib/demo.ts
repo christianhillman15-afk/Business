@@ -1,0 +1,534 @@
+"use client";
+
+// In-browser demo backend. When NEXT_PUBLIC_DEMO_MODE=true the app ships as a
+// fully static site (GitHub Pages) with no real API — every request below is
+// served from this in-memory store so the whole product is clickable. Actions
+// (approve, scan, draft, etc.) mutate the store so they feel real within a
+// session; a reload resets to the seeded state.
+//
+// This file has ZERO runtime dependency on the backend. Types are imported with
+// `import type` only, so there is no import cycle with ./api.
+import type {
+  Broadcast,
+  Capabilities,
+  ConnectedAccount,
+  Lead,
+  Notification as Notif,
+  Plan,
+  PricingProfile,
+  Quota,
+  Subscription,
+  User,
+} from "./api";
+
+export const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+
+const DEMO_TOKEN = "demo-token";
+export function isDemoToken(t: string | null) {
+  return t === DEMO_TOKEN;
+}
+
+const ago = (mins: number) => new Date(Date.now() - mins * 60000).toISOString();
+
+const PLANS: Plan[] = [
+  { code: "solo", name: "Solo", price_monthly: 200, daily_post_quota: 1 },
+  { code: "starter", name: "Starter", price_monthly: 250, daily_post_quota: 2 },
+  { code: "growth", name: "Growth", price_monthly: 300, daily_post_quota: 4 },
+  { code: "pro", name: "Pro", price_monthly: 350, daily_post_quota: 6 },
+  { code: "scale", name: "Scale", price_monthly: 400, daily_post_quota: 8 },
+];
+
+function makeResponse(id: number, text: string) {
+  return { id, generated_text: text, status: "draft" as const, posted_at: null };
+}
+
+// --- seeded, mutable store --------------------------------------------------
+const s: {
+  user: User;
+  quota: Quota;
+  caps: Capabilities;
+  leads: Lead[];
+  broadcasts: Broadcast[];
+  notifications: Notif[];
+  accounts: ConnectedAccount[];
+  subscription: Subscription;
+  profile: PricingProfile;
+  nextId: number;
+} = {
+  user: {
+    id: 1,
+    email: "demo@leadpilot.io",
+    role: "provider",
+    business_name: "Rivertown Plumbing Co.",
+    phone: "(555) 014-7788",
+    nextdoor_handle: "rivertown-plumbing",
+    onboarding_source: "demo",
+    timezone: "America/New_York",
+    automation_enabled: false,
+    sms_enabled: true,
+  },
+  quota: {
+    plan_code: "growth",
+    daily_quota: 4,
+    used_today: 1,
+    remaining_today: 3,
+    on_trial: false,
+  },
+  caps: {
+    facebook: { reply_autopost: true, broadcast: true },
+    nextdoor: { reply_autopost: false, broadcast: true },
+  },
+  leads: [
+    {
+      id: 101,
+      provider: "nextdoor",
+      post_url: "https://nextdoor.com/p/demo-water-heater",
+      author: "Dana M.",
+      content:
+        "Our water heater died this morning — anyone know a good plumber who can come today?? 😩",
+      location: "Maple Heights",
+      status: "drafted",
+      relevance_score: 0.94,
+      relevance_reason: "Water heater failure — core plumbing service.",
+      created_at: ago(28),
+      response: makeResponse(
+        201,
+        "Hi! I'm with Rivertown Plumbing Co. — we do same-day water heater repair & replacement. Service call is $89 and installs start at $1,200. Call or text us at (555) 014-7788 and we'll get your hot water back today. 🔧",
+      ),
+    },
+    {
+      id: 102,
+      provider: "facebook",
+      post_url: "https://facebook.com/groups/demo/posts/leak",
+      author: "Chris P.",
+      content:
+        "Kitchen sink is leaking under the cabinet and I'm getting water damage. Need someone ASAP — recommendations?",
+      location: "Rivertown",
+      status: "drafted",
+      relevance_score: 0.88,
+      relevance_reason: "Under-sink leak — matches leak repair.",
+      created_at: ago(96),
+      response: makeResponse(
+        202,
+        "So sorry about the leak! Rivertown Plumbing can stop the water damage fast — we handle under-sink leaks every day. Service call is $89 and most leak repairs start at $150. Text or call (555) 014-7788 and we'll come right out.",
+      ),
+    },
+    {
+      id: 103,
+      provider: "nextdoor",
+      post_url: "https://nextdoor.com/p/demo-toilet",
+      author: "Priya R.",
+      content:
+        "Looking for a reliable plumber to replace an old toilet and fix a running one. Who do you all use?",
+      location: "Oakwood",
+      status: "drafted",
+      relevance_score: 0.81,
+      relevance_reason: "Toilet replacement & repair — in trade.",
+      created_at: ago(180),
+      response: makeResponse(
+        203,
+        "Happy to help! Rivertown Plumbing replaces and repairs toilets all the time. A standard swap runs about $250 plus the fixture, and fixing a runner is usually a quick $89 service call. Reach us at (555) 014-7788 and we'll get it sorted.",
+      ),
+    },
+    {
+      id: 110,
+      provider: "nextdoor",
+      post_url: null,
+      author: "Sam T.",
+      content: "Can anyone recommend a good landscaper for weekly lawn care?",
+      location: "Maple Heights",
+      status: "filtered",
+      relevance_score: 0.11,
+      relevance_reason: "Landscaping — outside your trade (plumbing).",
+      created_at: ago(140),
+      response: null,
+    },
+    {
+      id: 111,
+      provider: "facebook",
+      post_url: null,
+      author: "Alex W.",
+      content: "Looking for a house cleaner every two weeks, any recommendations?",
+      location: "Rivertown",
+      status: "filtered",
+      relevance_score: 0.07,
+      relevance_reason: "Home cleaning — not a plumbing service.",
+      created_at: ago(220),
+      response: null,
+    },
+    {
+      id: 112,
+      provider: "nextdoor",
+      post_url: null,
+      author: "Jordan K.",
+      content: "Need an electrician to install a ceiling fan this weekend.",
+      location: "Oakwood",
+      status: "filtered",
+      relevance_score: 0.19,
+      relevance_reason: "Electrical — adjacent but outside plumbing.",
+      created_at: ago(300),
+      response: null,
+    },
+  ],
+  broadcasts: [
+    {
+      id: 301,
+      provider: "nextdoor",
+      body_text:
+        "👋 Neighbors! Rivertown Plumbing here. Slow drains or a dripping faucet before the holidays? We do same-day service across Rivertown, Maple Heights & Oakwood. Service calls $89, no surprise fees. Call/text (555) 014-7788.",
+      status: "draft",
+      scheduled_for: null,
+      posted_at: null,
+      created_at: ago(55),
+    },
+    {
+      id: 302,
+      provider: "facebook",
+      body_text:
+        "🚿 Spring plumbing tune-up season is here. Ask us about a whole-home check: water heater, shutoff valves, and a leak scan. Mention this post for $25 off. — Rivertown Plumbing, (555) 014-7788.",
+      status: "posted",
+      scheduled_for: null,
+      posted_at: ago(1440),
+      created_at: ago(1520),
+    },
+  ],
+  notifications: [
+    {
+      id: 401,
+      kind: "lead",
+      title: "New in-field lead on Nextdoor",
+      body: "Water heater request in Maple Heights — 94% match. A reply is drafted and waiting.",
+      read: false,
+      created_at: ago(28),
+    },
+    {
+      id: 402,
+      kind: "lead",
+      title: "New in-field lead on Facebook",
+      body: "Under-sink leak in Rivertown — reply ready to approve & post.",
+      read: false,
+      created_at: ago(96),
+    },
+    {
+      id: 403,
+      kind: "system",
+      title: "Welcome to LeadPilot",
+      body: "Your AI is now watching local Nextdoor & Facebook feeds for plumbing jobs.",
+      read: true,
+      created_at: ago(2880),
+    },
+  ],
+  accounts: [
+    {
+      id: 501,
+      provider: "nextdoor",
+      auth_method: "managed_business_page",
+      display_name: "Rivertown Plumbing Co.",
+      health: "healthy",
+      connected_at: ago(4320),
+    },
+  ],
+  subscription: { plan_code: "growth", status: "active", trial_end: null },
+  profile: {
+    trade: "plumbing",
+    service_categories: [
+      "leak repair",
+      "water heaters",
+      "drain cleaning",
+      "toilet repair",
+    ],
+    price_list:
+      "Service call $89; drain cleaning from $150; water heater install from $1,200; toilet swap ~$250 + fixture.",
+    phone: "(555) 014-7788",
+    target_neighborhoods: ["Rivertown", "Maple Heights", "Oakwood"],
+  },
+  nextId: 1000,
+};
+
+// Pool of leads revealed one-at-a-time when the user clicks "Scan for leads".
+const DISCOVERY_POOL = [
+  {
+    author: "Morgan L.",
+    location: "Rivertown",
+    content:
+      "Low water pressure in the whole house all of a sudden — is that a plumber thing? Who's good around here?",
+    reason: "Whole-house pressure issue — plumbing diagnostic.",
+    score: 0.86,
+    reply:
+      "Great question — yes, that's right up our alley. Sudden whole-house pressure drops are usually a quick diagnosis. Rivertown Plumbing can take a look today; service call is $89 and we'll tell you exactly what's going on before any work. (555) 014-7788.",
+  },
+  {
+    author: "Taylor B.",
+    location: "Oakwood",
+    content:
+      "Garbage disposal stopped working and now the sink is backing up. Help! Any plumber recs?",
+    reason: "Disposal + backup — drain/disposal service.",
+    score: 0.83,
+    reply:
+      "We can help! Disposal jams and the backups they cause are an everyday fix for us. Rivertown Plumbing charges an $89 service call and most disposal repairs are done same visit. Text/call (555) 014-7788 and we'll get your sink draining again.",
+  },
+  {
+    author: "Riley S.",
+    location: "Maple Heights",
+    content:
+      "Running toilet is wasting so much water. Is this an easy fix or do I need a pro?",
+    reason: "Running toilet — quick plumbing repair.",
+    score: 0.79,
+    reply:
+      "Usually a quick fix! A running toilet is typically a worn flapper or fill valve — an $89 service call covers it in most cases. Rivertown Plumbing can swing by and stop the waste. Reach us at (555) 014-7788.",
+  },
+];
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function notFound(path: string): never {
+  throw new Error(`Demo backend has no handler for ${path}`);
+}
+
+function route(method: string, path: string, body: any): unknown {
+  const m = (re: RegExp) => path.match(re);
+
+  // --- auth ---------------------------------------------------------------
+  if (path === "/api/auth/login" && method === "POST")
+    return { access_token: DEMO_TOKEN };
+  if (path === "/api/auth/register" && method === "POST")
+    return { access_token: DEMO_TOKEN };
+  if (path === "/api/auth/start-trial" && method === "POST")
+    return { access_token: DEMO_TOKEN };
+  if (path === "/api/auth/magic/request" && method === "POST")
+    return { ok: true };
+  if (path === "/api/auth/magic/verify" && method === "POST")
+    return { access_token: DEMO_TOKEN };
+  if (path === "/api/auth/me") return s.user;
+
+  // --- catalog / read models ---------------------------------------------
+  if (path === "/api/plans") return PLANS;
+  if (path === "/api/capabilities") return s.caps;
+  if (path === "/api/leads/quota") return s.quota;
+  if (path === "/api/leads") return s.leads;
+  if (path === "/api/subscription") return s.subscription;
+  if (path === "/api/profile" && method === "GET") return s.profile;
+  if (path === "/api/accounts" && method === "GET") return s.accounts;
+  if (path === "/api/broadcast" && method === "GET") return s.broadcasts;
+  if (path === "/api/notifications" && method === "GET") return s.notifications;
+  if (path === "/api/notifications/unread-count")
+    return { unread: s.notifications.filter((n) => !n.read).length };
+
+  // --- leads --------------------------------------------------------------
+  if (path === "/api/leads/discover" && method === "POST") {
+    if (s.quota.remaining_today <= 0) return { found: 0 };
+    const t = DISCOVERY_POOL[s.leads.length % DISCOVERY_POOL.length];
+    const id = ++s.nextId;
+    s.leads.unshift({
+      id,
+      provider: "nextdoor",
+      post_url: "https://nextdoor.com/p/demo-" + id,
+      author: t.author,
+      content: t.content,
+      location: t.location,
+      status: "drafted",
+      relevance_score: t.score,
+      relevance_reason: t.reason,
+      created_at: new Date().toISOString(),
+      response: makeResponse(++s.nextId, t.reply),
+    });
+    s.quota.used_today += 1;
+    s.quota.remaining_today = Math.max(0, s.quota.remaining_today - 1);
+    s.notifications.unshift({
+      id: ++s.nextId,
+      kind: "lead",
+      title: "New in-field lead on Nextdoor",
+      body: `${t.reason} ${t.location} — reply drafted.`,
+      read: false,
+      created_at: new Date().toISOString(),
+    });
+    return { found: 1 };
+  }
+
+  // --- automation ---------------------------------------------------------
+  if (path === "/api/automation/toggle" && method === "POST") {
+    s.user.automation_enabled = !s.user.automation_enabled;
+    return { automation_enabled: s.user.automation_enabled };
+  }
+
+  // --- responses ----------------------------------------------------------
+  let mm = m(/^\/api\/responses\/(\d+)(?:\/(\w+(?:-\w+)?))?$/);
+  if (mm) {
+    const rid = Number(mm[1]);
+    const action = mm[2];
+    const lead = s.leads.find((l) => l.response?.id === rid);
+    if (!lead || !lead.response) return { ok: true };
+    if (method === "PUT") {
+      lead.response.generated_text = body?.generated_text ?? lead.response.generated_text;
+      return lead.response;
+    }
+    if (action === "approve" || action === "mark-posted") {
+      lead.response.status = "posted";
+      lead.response.posted_at = new Date().toISOString();
+      lead.status = "engaged";
+      return lead.response;
+    }
+    if (action === "reject") {
+      s.leads = s.leads.filter((l) => l.id !== lead.id);
+      return { ok: true };
+    }
+    return { ok: true };
+  }
+
+  // --- account ------------------------------------------------------------
+  if (path === "/api/account" && method === "PATCH") {
+    const allowed = [
+      "business_name",
+      "phone",
+      "timezone",
+      "nextdoor_handle",
+      "sms_enabled",
+    ] as const;
+    for (const k of allowed)
+      if (body?.[k] !== undefined) (s.user as any)[k] = body[k];
+    return s.user;
+  }
+  if (path === "/api/account/password" && method === "POST") return { ok: true };
+  if (path === "/api/account" && method === "DELETE") return undefined;
+
+  // --- profile ------------------------------------------------------------
+  if (path === "/api/profile" && method === "PUT") {
+    s.profile = { ...s.profile, ...body };
+    return s.profile;
+  }
+
+  // --- connected accounts -------------------------------------------------
+  mm = m(/^\/api\/accounts\/oauth\/(\w+)\/start$/);
+  if (mm) return { authorize_url: "#" };
+  if (path === "/api/accounts" && method === "POST") {
+    const acc: ConnectedAccount = {
+      id: ++s.nextId,
+      provider: body.provider,
+      auth_method: body.auth_method ?? "managed_business_page",
+      display_name: body.display_name ?? s.user.business_name,
+      health: "healthy",
+      connected_at: new Date().toISOString(),
+    };
+    s.accounts.push(acc);
+    return acc;
+  }
+  mm = m(/^\/api\/accounts\/(\d+)$/);
+  if (mm && method === "DELETE") {
+    s.accounts = s.accounts.filter((a) => a.id !== Number(mm![1]));
+    return undefined;
+  }
+
+  // --- subscription / billing --------------------------------------------
+  if (path === "/api/subscription/select" && method === "POST") {
+    const plan = PLANS.find((p) => p.code === body.plan_code) ?? PLANS[2];
+    s.subscription = { plan_code: plan.code, status: "active", trial_end: null };
+    s.quota.plan_code = plan.code;
+    s.quota.daily_quota = plan.daily_post_quota;
+    s.quota.on_trial = false;
+    s.quota.remaining_today = Math.max(
+      0,
+      plan.daily_post_quota - s.quota.used_today,
+    );
+    return { subscription: s.subscription, checkout_url: null };
+  }
+
+  // --- business posts (broadcast) ----------------------------------------
+  if (path === "/api/broadcast/draft" && method === "POST") {
+    const provider = body?.provider ?? "nextdoor";
+    const topic = body?.topic;
+    const post: Broadcast = {
+      id: ++s.nextId,
+      provider,
+      body_text: topic
+        ? `👋 Neighbors! ${topic} — Rivertown Plumbing has you covered across Rivertown, Maple Heights & Oakwood. Licensed & insured, $89 service calls, same-day when we can. Call/text (555) 014-7788.`
+        : "👋 Neighbors! Rivertown Plumbing here for all things plumbing — leaks, water heaters, drains and more. Honest pricing, $89 service calls, same-day service when available. Call/text (555) 014-7788.",
+      status: "draft",
+      scheduled_for: null,
+      posted_at: null,
+      created_at: new Date().toISOString(),
+    };
+    s.broadcasts.unshift(post);
+    return post;
+  }
+  mm = m(/^\/api\/broadcast\/(\d+)(?:\/(\w+))?$/);
+  if (mm) {
+    const bid = Number(mm[1]);
+    const action = mm[2];
+    const post = s.broadcasts.find((b) => b.id === bid);
+    if (!post) return { ok: true };
+    if (method === "DELETE") {
+      s.broadcasts = s.broadcasts.filter((b) => b.id !== bid);
+      return undefined;
+    }
+    if (method === "PUT") {
+      post.body_text = body?.body_text ?? post.body_text;
+      return post;
+    }
+    if (action === "publish") {
+      post.status = "posted";
+      post.posted_at = new Date().toISOString();
+      return post;
+    }
+    if (action === "schedule") {
+      post.status = "scheduled";
+      post.scheduled_for = body?.scheduled_for ?? null;
+      return post;
+    }
+    return post;
+  }
+
+  // --- notifications ------------------------------------------------------
+  if (path === "/api/notifications/read-all" && method === "POST") {
+    s.notifications.forEach((n) => (n.read = true));
+    return { ok: true };
+  }
+  mm = m(/^\/api\/notifications\/(\d+)\/read$/);
+  if (mm && method === "POST") {
+    const n = s.notifications.find((x) => x.id === Number(mm![1]));
+    if (n) n.read = true;
+    return { ok: true };
+  }
+
+  // --- support chatbot ----------------------------------------------------
+  if (path === "/api/support/chat" && method === "POST") {
+    const msg: string = (body?.message ?? "").toLowerCase();
+    const escalated = /refund|cancel|human|charge|dispute/.test(msg);
+    let reply =
+      "Thanks for reaching out! In LeadPilot, our AI scans local Nextdoor and Facebook feeds for posts in your trade, drafts a reply with your services, pricing and phone number, and texts each lead to you. You approve before anything posts.";
+    if (msg.includes("price") || msg.includes("plan") || msg.includes("cost"))
+      reply =
+        "Plans are billed monthly by how many replies you want per day: Solo $200 (1/day), Starter $250 (2), Growth $300 (4), Pro $350 (6), Scale $400 (8). Every plan starts with a 7-day free trial — one lead a day, on us.";
+    else if (msg.includes("nextdoor"))
+      reply =
+        "On Nextdoor, replying to other people's posts has no public API, so we draft the reply and you post it with one tap (the dashboard has Copy reply + Open post). We can also publish your own Business Posts through Nextdoor's official API.";
+    else if (msg.includes("connect") || msg.includes("account"))
+      reply =
+        "You can connect with the platform's official authorize button (no password is ever shared with us), or have us set up a managed Business Page for you. Head to Setup to connect.";
+    else if (msg.includes("quota") || msg.includes("daily"))
+      reply =
+        "Your daily quota is the number of AI replies that can post per day on your plan. You're on Growth: 4 replies/day. It resets at local midnight in your timezone.";
+    if (escalated)
+      reply =
+        "I've noted this and looped in a human on our team — someone will follow up by email. Is there anything else I can help with in the meantime?";
+    return { ticket_id: 1, reply, escalated };
+  }
+
+  // --- admin (demo user is a provider, so these are stubs) -----------------
+  if (path.startsWith("/api/admin/")) {
+    if (path.includes("stats")) return {};
+    return [];
+  }
+
+  return notFound(path);
+}
+
+export async function demoRequest<T>(
+  path: string,
+  options: RequestInit,
+): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+  const body = options.body ? JSON.parse(options.body as string) : undefined;
+  await delay(160);
+  const cleanPath = path.split("?")[0];
+  return route(method, cleanPath, body) as T;
+}

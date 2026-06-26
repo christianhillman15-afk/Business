@@ -1,5 +1,7 @@
 "use client";
 
+import { DEMO, demoRequest } from "./demo";
+
 const BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -30,6 +32,9 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  // Static demo build: serve everything from the in-browser store, no network.
+  if (DEMO) return demoRequest<T>(path, options);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
