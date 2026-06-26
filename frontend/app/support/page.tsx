@@ -14,6 +14,22 @@ const GREETING =
   "Hi! I'm your LeadPilot assistant 👋 Ask me anything — how leads work, " +
   "getting them by text, pricing, or connecting your accounts.";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// How long the "typing…" bubble lingers before a reply lands — longer for
+// longer messages, so the bot feels like it's actually composing a text.
+// ~18ms/char, between 0.8s and 3.5s.
+function typingDelay(text: string) {
+  return Math.min(3500, Math.max(800, Math.round(text.length * 18)));
+}
+
+// Keep the typing bubble up for the composed duration, minus whatever the API
+// already took (so a slow real backend doesn't get double-delayed).
+async function typingPause(text: string, startedAt: number) {
+  const wait = typingDelay(text) - (Date.now() - startedAt);
+  if (wait > 0) await sleep(wait);
+}
+
 export default function SupportPage() {
   const { user, loading, logout } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([
@@ -51,6 +67,7 @@ export default function SupportPage() {
     setInput("");
     setMessages((m) => [...m, { role: "user", content: text }]);
     setBusy(true);
+    const started = Date.now();
     try {
       const res = await api.post<{
         ticket_id: number;
@@ -58,20 +75,18 @@ export default function SupportPage() {
         escalated: boolean;
       }>("/api/support/chat", { ticket_id: ticketId, message: text });
       setTicketId(res.ticket_id);
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: res.reply },
-        ...(res.escalated
-          ? [
-              {
-                role: "assistant" as const,
-                content:
-                  "⤴ I've looped in a human teammate — they'll follow up by email shortly.",
-              },
-            ]
-          : []),
-      ]);
+      // Linger on the typing bubble for a natural, length-based beat.
+      await typingPause(res.reply, started);
+      setMessages((m) => [...m, { role: "assistant", content: res.reply }]);
+      if (res.escalated) {
+        // A second "text" — show the typing bubble again briefly.
+        const note =
+          "⤴ I've looped in a human teammate — they'll follow up by email shortly.";
+        await typingPause(note, Date.now());
+        setMessages((m) => [...m, { role: "assistant", content: note }]);
+      }
     } catch {
+      await sleep(700);
       setMessages((m) => [
         ...m,
         { role: "assistant", content: "Sorry, something went wrong. Try again." },
