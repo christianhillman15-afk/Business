@@ -542,3 +542,19 @@ a:focus-visible {
   border-radius: 0.375rem;
 }
 
+
+
+/* ---- Dashboard stat cards: brand gradient top cap ------------------------*/
+.stat-card {
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(to right, #6366f1, #d946ef, #38bdf8);
+}

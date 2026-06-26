@@ -78,31 +78,33 @@ export default function DashboardPage() {
 
   return (
     <AppShell user={user} onLogout={logout}>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <span className="lp-live text-xs font-semibold uppercase tracking-wide text-green-600">
-              <span className="lp-live-core" aria-hidden />
-              Live
-            </span>
+      <div className="hero-bg relative mb-8 overflow-hidden rounded-2xl px-6 py-6 text-white shadow-elev">
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-display text-2xl font-bold">Dashboard</h1>
+              <span className="lp-live text-xs font-semibold uppercase tracking-wide text-green-300">
+                <span className="lp-live-core" aria-hidden />
+                Live
+              </span>
+            </div>
+            <p className="mt-1 max-w-xl text-sm text-slate-300">
+              AI watches your local feeds and drafts replies for leads in your
+              trade. You approve before anything posts.
+            </p>
           </div>
-          <p className="text-sm text-slate-500">
-            AI watches your local feeds and drafts replies for leads in your
-            trade. You approve before anything posts.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            className="btn-ghost"
-            onClick={toggleAutomation}
-            title="Master switch for AI posting"
-          >
-            Automation: {user.automation_enabled ? "ON" : "OFF"}
-          </button>
-          <button className="btn-primary" onClick={discover} disabled={discovering}>
-            {discovering ? "Scanning…" : "Scan for leads"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-ghost border-white/20 bg-white/10 text-white hover:bg-white/20"
+              onClick={toggleAutomation}
+              title="Master switch for AI posting"
+            >
+              Automation: {user.automation_enabled ? "ON" : "OFF"}
+            </button>
+            <button className="btn-primary" onClick={discover} disabled={discovering}>
+              {discovering ? "Scanning…" : "Scan for leads"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -206,7 +208,7 @@ function Stat({
   highlight?: boolean;
 }) {
   return (
-    <div className="card">
+    <div className="card stat-card">
       <div className="text-xs uppercase tracking-wide text-slate-400">
         {label}
       </div>
