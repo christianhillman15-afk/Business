@@ -33,12 +33,27 @@ services:
         sync: false
       - key: FRONTEND_BASE_URL
         sync: false
+      # Public URL of THIS backend (e.g. https://leadpilot-backend.onrender.com).
+      # Used to build OAuth redirect URIs.
+      - key: OAUTH_REDIRECT_BASE
+        sync: false
       # Optional — leave blank to use offline AI / mock billing.
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # --- SMS (two-way texting bot) --------------------------------------
+      # Set SMS_BACKEND=twilio and fill the three Twilio values to send real
+      # texts. Point Twilio's inbound webhook at <backend>/api/sms/inbound.
+      - key: SMS_BACKEND
+        value: "console"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
         sync: false
       # Keep live posting OFF until your Meta app is approved (see docs/COMPLIANCE.md).
       - key: LEADPILOT_LIVE_CONNECTORS
