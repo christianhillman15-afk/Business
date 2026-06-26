@@ -7,7 +7,7 @@ import { api, User } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/broadcast", label: "Business Posts" },
+  { href: "/generate", label: "Response Generator" },
   { href: "/onboarding", label: "Setup" },
   { href: "/billing", label: "Billing" },
   { href: "/free-trial", label: "Free Trial" },

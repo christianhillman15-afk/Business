@@ -411,6 +411,50 @@ function clientSummary(c: ClientDetail): ClientSummary {
   };
 }
 
+// --- Custom Response Generator demo state -----------------------------------
+// The demo showcases the free-trial experience: 3 generations/day, then upgrade.
+const GEN_TRIAL_LIMIT = 3;
+let genUsedToday = 0;
+const genHistory: {
+  id: number;
+  post_content: string;
+  platform: string | null;
+  reply: string;
+  created_at: string;
+}[] = [];
+
+function genUsage() {
+  return {
+    used_today: genUsedToday,
+    daily_limit: GEN_TRIAL_LIMIT,
+    remaining: Math.max(0, GEN_TRIAL_LIMIT - genUsedToday),
+    unlimited: false,
+    on_trial: true,
+  };
+}
+
+function demoReply(content: string, platform?: string | null): string {
+  const biz = s.user.business_name || "our team";
+  const phone = s.profile.phone || "us";
+  const svc = s.profile.service_categories[0] || "the work you need";
+  const price = s.profile.price_list
+    ? s.profile.price_list.split(";")[0].trim() + "."
+    : "honest, upfront pricing.";
+  const lower = (content || "").toLowerCase();
+  let opener = "Happy to help!";
+  if (/asap|emergency|today|right now|urgent/.test(lower))
+    opener = "So sorry you're dealing with this — we can usually get out same day.";
+  else if (/quote|price|cost|estimate|how much/.test(lower))
+    opener = "Happy to give you a quick quote!";
+  else if (/recommend|anyone know|who do you/.test(lower))
+    opener = "Glad to help a neighbor!";
+  const onPlatform = platform ? "" : "";
+  return (
+    `Hi! I'm with ${biz}. ${opener} We handle ${svc} and more — ${price} ` +
+    `Call or text ${phone} and I'll take care of you.${onPlatform}`
+  );
+}
+
 // Pool of leads revealed one-at-a-time when the user clicks "Scan for leads".
 const DISCOVERY_POOL = [
   {
@@ -657,6 +701,30 @@ function route(method: string, path: string, body: any): unknown {
     const n = s.notifications.find((x) => x.id === Number(mm![1]));
     if (n) n.read = true;
     return { ok: true };
+  }
+
+  // --- custom response generator ------------------------------------------
+  if (path === "/api/generate/usage") return genUsage();
+  if (path === "/api/generate/history") return genHistory.slice(0, 10);
+  if (path === "/api/generate" && method === "POST") {
+    if (genUsedToday >= GEN_TRIAL_LIMIT) {
+      throw {
+        status: 429,
+        detail:
+          "You've used your 3 free trial generations today. Upgrade for unlimited.",
+      };
+    }
+    const id = ++s.nextId;
+    const reply = demoReply(body?.post_content ?? "", body?.platform);
+    genUsedToday += 1;
+    genHistory.unshift({
+      id,
+      post_content: body?.post_content ?? "",
+      platform: body?.platform ?? null,
+      reply,
+      created_at: new Date().toISOString(),
+    });
+    return { id, reply, usage: genUsage() };
   }
 
   // --- support assistant --------------------------------------------------

@@ -632,3 +632,33 @@ def test_disabled_client_gets_no_texts(
     client.post("/api/leads/discover", headers=h)
     # Disabled clients receive no AI bot texts.
     assert sent == []
+
+
+def test_generate_trial_cap(client: TestClient):
+    h = _fresh_provider(client)
+    u = client.get("/api/generate/usage", headers=h).json()
+    assert u["on_trial"] is True and u["daily_limit"] == 3 and u["unlimited"] is False
+    for i in range(3):
+        r = client.post(
+            "/api/generate", headers=h, json={"post_content": f"Need a plumber asap #{i}"}
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["reply"]
+    over = client.post("/api/generate", headers=h, json={"post_content": "one more"})
+    assert over.status_code == 429
+    assert client.get("/api/generate/usage", headers=h).json()["remaining"] == 0
+
+
+def test_generate_paid_unlimited(client: TestClient, provider_headers: dict):
+    u = client.get("/api/generate/usage", headers=provider_headers).json()
+    assert u["unlimited"] is True and u["daily_limit"] is None
+    r = client.post(
+        "/api/generate",
+        headers=provider_headers,
+        json={"post_content": "Water heater is leaking, who can help?", "platform": "nextdoor"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["reply"]
+    assert r.json()["usage"]["unlimited"] is True
+    hist = client.get("/api/generate/history", headers=provider_headers).json()
+    assert len(hist) >= 1 and hist[0]["reply"]

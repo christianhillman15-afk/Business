@@ -33,7 +33,17 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   // Static demo build: serve everything from the in-browser store, no network.
-  if (DEMO) return demoRequest<T>(path, options);
+  if (DEMO) {
+    try {
+      return await demoRequest<T>(path, options);
+    } catch (e) {
+      if (e && typeof e === "object" && "status" in e) {
+        const err = e as { status: number; detail?: string };
+        throw new ApiError(err.status, err.detail ?? "Request failed");
+      }
+      throw e;
+    }
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -166,6 +176,29 @@ export interface Notification {
   title: string;
   body: string;
   read: boolean;
+  created_at: string;
+}
+
+// --- Custom Response Generator ----------------------------------------------
+export interface GenerationUsage {
+  used_today: number;
+  daily_limit: number | null; // null = unlimited
+  remaining: number | null;
+  unlimited: boolean;
+  on_trial: boolean;
+}
+
+export interface GenerateResult {
+  id: number;
+  reply: string;
+  usage: GenerationUsage;
+}
+
+export interface GenerationItem {
+  id: number;
+  post_content: string;
+  platform: string | null;
+  reply: string;
   created_at: string;
 }
 

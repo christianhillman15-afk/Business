@@ -358,3 +358,31 @@ class ClientUpdate(BaseModel):
 class TrialUpdate(BaseModel):
     days_left: int | None = None
     trial_active: bool | None = None
+
+
+# --- Custom Response Generator ----------------------------------------------
+class GenerateRequest(BaseModel):
+    post_content: str = Field(min_length=1)
+    platform: str | None = None
+
+
+class GenerationUsage(BaseModel):
+    used_today: int
+    daily_limit: int | None  # None = unlimited
+    remaining: int | None
+    unlimited: bool
+    on_trial: bool
+
+
+class GenerateResponse(BaseModel):
+    id: int
+    reply: str
+    usage: GenerationUsage
+
+
+class GenerationOut(BaseModel):
+    id: int
+    post_content: str
+    platform: str | None
+    reply: str
+    created_at: datetime

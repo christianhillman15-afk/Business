@@ -63,6 +63,9 @@ class Settings(BaseSettings):
 
     # Free trials are capped to this many AI replies/day regardless of plan.
     trial_daily_post_quota: int = 1
+    # Custom Response Generator: free trials get this many generations/day; paid
+    # plans are unlimited.
+    trial_generation_quota: int = 3
 
     # Billing
     stripe_secret_key: str | None = None

@@ -25,10 +25,27 @@ _SYSTEM = (
 
 
 def draft_reply(lead: LeadMatch, profile: ClientPricingProfile | None) -> str:
+    return generate_reply(
+        lead.content,
+        profile,
+        business_name=lead.user.business_name,
+    )
+
+
+def generate_reply(
+    post_content: str,
+    profile: ClientPricingProfile | None,
+    *,
+    business_name: str | None = None,
+    platform: str | None = None,
+) -> str:
+    """Write a reply for any post text using the client's stored services,
+    pricing, and phone. Powers both auto-drafting and the on-demand generator."""
     trade = (profile.trade if profile else None) or "the work you need"
     price_list = (profile.price_list if profile else "") or "fair, upfront pricing"
     phone = (profile.phone if profile else None) or "(call for a quote)"
-    business = lead.user.business_name or "a local pro"
+    business = business_name or "a local pro"
+    where = f" on {platform}" if platform else ""
 
     ai = get_ai()
     if ai.enabled:
@@ -37,7 +54,7 @@ def draft_reply(lead: LeadMatch, profile: ClientPricingProfile | None) -> str:
             f"Trade: {trade}\n"
             f"Pricing: {price_list}\n"
             f"Phone: {phone}\n\n"
-            f"They posted:\n\"\"\"\n{lead.content}\n\"\"\"\n\n"
+            f"They posted{where}:\n\"\"\"\n{post_content}\n\"\"\"\n\n"
             "Write the reply."
         )
         text = ai.complete_text(

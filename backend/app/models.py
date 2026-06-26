@@ -119,6 +119,9 @@ class User(Base):
     contacts: Mapped[list["ClientContact"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    custom_responses: Mapped[list["CustomResponse"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     pricing_profile: Mapped["ClientPricingProfile"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
@@ -180,6 +183,22 @@ class ClientContact(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     user: Mapped[User] = relationship(back_populates="contacts")
+
+
+class CustomResponse(Base):
+    """A reply the user generated on-demand for a post they found themselves
+    (the Custom Response Generator)."""
+
+    __tablename__ = "custom_responses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    post_content: Mapped[str] = mapped_column(Text)
+    platform: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    reply: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    user: Mapped[User] = relationship(back_populates="custom_responses")
 
 
 class ConnectedAccount(Base):
