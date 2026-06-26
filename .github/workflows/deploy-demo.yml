@@ -1,14 +1,14 @@
 name: Deploy demo to GitHub Pages
 
 # Builds the frontend as a fully static site (in-browser demo data, no backend)
-# and publishes it to GitHub Pages, giving a real, shareable public URL.
+# and publishes it to GitHub Pages.
+#
+# NOTE: GitHub Pages cannot serve a PRIVATE repo on the free plan, so this is
+# manual-only (run it from the Actions tab) and only works once the repo is
+# public OR the account is on GitHub Pro. The primary demo host is Netlify —
+# see netlify.toml and docs/DEMO.md.
 
 on:
-  push:
-    branches: [claude/build-something-et1lis]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/deploy-demo.yml"
   workflow_dispatch:
 
 permissions:
