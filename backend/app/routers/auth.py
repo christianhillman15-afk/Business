@@ -128,6 +128,7 @@ def start_trial(
         db,
         email=payload.email,
         business_name=payload.business_name,
+        contact_name=payload.name,
         phone=payload.phone,
         nextdoor_handle=payload.nextdoor_handle,
         plan_code=payload.plan_code,

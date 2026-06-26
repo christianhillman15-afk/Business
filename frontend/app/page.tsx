@@ -36,13 +36,13 @@ export default function Landing() {
         {/* Hero */}
         <section className="section grid items-center gap-12 py-20 lg:grid-cols-2 lg:py-28">
           <div>
-            <span className="eyebrow">⚡ AI lead-gen for local pros</span>
-            <h1 className="mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
-              We do <span className="text-grad">everything</span>.
+            <span className="eyebrow lp-enter">⚡ AI lead-gen for local pros</span>
+            <h1 className="text-display lp-enter lp-delay-1 mt-5 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+              We do <span className="text-grad text-grad-flow">everything</span>.
               <br />
               You just show up and get paid.
             </h1>
-            <p className="mt-6 max-w-xl text-lg text-slate-300">
+            <p className="lp-enter lp-delay-2 mt-6 max-w-xl text-lg text-slate-300">
               Right now someone three streets over is asking for a{" "}
               <span className="font-semibold text-white">plumber</span>,{" "}
               <span className="font-semibold text-white">cleaner</span>, or{" "}
@@ -51,7 +51,7 @@ export default function Landing() {
               writes the perfect reply, and posts it for you. Your phone rings
               while you work.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="lp-enter lp-delay-3 mt-8 flex flex-wrap items-center gap-3">
               <Link href="/start" className="btn-cta">
                 Start free — a lead a day, on us →
               </Link>
@@ -62,18 +62,22 @@ export default function Landing() {
                 See how it works
               </Link>
             </div>
-            <p className="mt-4 text-sm text-slate-400">
+            <p className="lp-enter lp-delay-4 mt-4 text-sm text-slate-400">
               No credit card. No password. Set up in 3 minutes.
             </p>
           </div>
 
           {/* Floating product mock */}
-          <div className="relative">
-            <div className="absolute -inset-4 rounded-3xl bg-gradient-to-tr from-indigo-500/20 to-fuchsia-500/20 blur-2xl" />
-            <div className="relative rounded-2xl border border-white/10 bg-white p-5 text-slate-800 shadow-2xl">
+          <div className="relative lp-enter-fade lp-delay-5 lg:animate-float">
+            <div className="glow-aura glow-breathe" aria-hidden />
+            <div className="glass-card gradient-border relative rounded-2xl border border-white/10 p-5 text-slate-800">
               <div className="mb-3 flex items-center gap-2 text-xs text-slate-500">
                 <span className="badge bg-brand-50 text-brand-700">Nextdoor</span>
                 <span className="badge bg-green-100 text-green-700">94% match</span>
+                <span className="lp-live font-medium text-green-700">
+                  <span className="lp-live-core" aria-hidden />
+                  Live
+                </span>
                 <span>· Maple Heights</span>
               </div>
               <p className="text-sm">
@@ -115,13 +119,13 @@ export default function Landing() {
       </div>
 
       {/* How it works */}
-      <section id="how" className="bg-slate-50 py-20">
+      <section id="how" className="grid-soft bg-slate-50 py-20">
         <div className="section">
           <div className="text-center">
             <span className="text-sm font-semibold uppercase tracking-wider text-indigo-600">
               Done for you
             </span>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+            <h2 className="text-display mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
               You connect once. We handle the rest.
             </h2>
           </div>
@@ -162,7 +166,7 @@ export default function Landing() {
       {/* Features */}
       <section id="features" className="section py-20">
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h2 className="text-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
             Everything a $4,000/mo marketing agency does.
             <br />
             <span className="text-grad-dark">Without the agency.</span>
@@ -213,7 +217,8 @@ export default function Landing() {
       {/* Big statement band */}
       <section className="hero-bg py-20 text-center text-white">
         <div className="section">
-          <h2 className="mx-auto max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
+          <div className="divider-grad mx-auto mb-10 max-w-xs" />
+          <h2 className="text-display mx-auto max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
             Stop chasing work.
             <br />
             <span className="text-grad">Let it come to you.</span>
@@ -227,7 +232,7 @@ export default function Landing() {
       {/* Pricing */}
       <section id="pricing" className="section py-20">
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h2 className="text-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
             One job pays for the whole month.
           </h2>
           <p className="mt-3 text-lg text-slate-600">
@@ -241,15 +246,15 @@ export default function Landing() {
             return (
               <div
                 key={p.code}
-                className={`rounded-2xl border p-6 ${
+                className={`relative rounded-2xl border p-6 transition ${
                   featured
-                    ? "border-indigo-500 bg-indigo-600 text-white shadow-xl shadow-indigo-500/20"
-                    : "border-slate-200 bg-white"
+                    ? "price-featured border-indigo-400 bg-gradient-to-b from-indigo-600 to-indigo-700 text-white shadow-elev-lg shadow-indigo-500/30"
+                    : "border-slate-200 bg-white shadow-sm hover:-translate-y-0.5 hover:shadow-md"
                 }`}
               >
                 {featured && (
-                  <div className="mb-2 inline-block rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold">
-                    Most popular
+                  <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-bold ring-1 ring-inset ring-white/30">
+                    ★ Most popular
                   </div>
                 )}
                 <div
@@ -268,12 +273,12 @@ export default function Landing() {
                 <div
                   className={`mt-2 text-sm ${featured ? "text-indigo-100" : "text-slate-600"}`}
                 >
-                  {p.daily_post_quota} {p.daily_post_quota === 1 ? "reply" : "replies"}{" "}
-                  / day
+                  Up to {p.daily_post_quota}{" "}
+                  {p.daily_post_quota === 1 ? "reply" : "replies"} / day
                 </div>
                 <Link
                   href="/start"
-                  className={`mt-5 block rounded-xl px-4 py-2.5 text-center text-sm font-semibold ${
+                  className={`mt-5 block rounded-xl px-4 py-2.5 text-center text-sm font-semibold transition ${
                     featured
                       ? "bg-white text-indigo-700 hover:bg-indigo-50"
                       : "bg-slate-900 text-white hover:bg-slate-800"
@@ -304,7 +309,7 @@ export default function Landing() {
 
       {/* Final CTA */}
       <section className="section py-20 text-center">
-        <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+        <h2 className="text-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
           Your next customer is posting right now.
         </h2>
         <p className="mx-auto mt-3 max-w-xl text-lg text-slate-600">

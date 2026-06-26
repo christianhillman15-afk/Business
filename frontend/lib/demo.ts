@@ -60,6 +60,7 @@ const s: {
     email: "demo@leadpilot.io",
     role: "provider",
     business_name: "Rivertown Plumbing Co.",
+    contact_name: "Jordan Rivers",
     phone: "(555) 014-7788",
     nextdoor_handle: "rivertown-plumbing",
     onboarding_source: "demo",

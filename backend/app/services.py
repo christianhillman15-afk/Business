@@ -59,6 +59,7 @@ def create_trial_user(
     *,
     email: str,
     business_name: str | None = None,
+    contact_name: str | None = None,
     phone: str | None = None,
     nextdoor_handle: str | None = None,
     plan_code: str | None = None,
@@ -78,6 +79,7 @@ def create_trial_user(
         password_hash=None,  # passwordless — magic-link login
         role=UserRole.provider,
         business_name=business_name,
+        contact_name=contact_name,
         phone=phone,
         nextdoor_handle=nextdoor_handle,
         onboarding_source=source,

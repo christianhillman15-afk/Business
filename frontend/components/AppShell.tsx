@@ -10,6 +10,7 @@ const NAV = [
   { href: "/broadcast", label: "Business Posts" },
   { href: "/onboarding", label: "Setup" },
   { href: "/billing", label: "Billing" },
+  { href: "/free-trial", label: "Free Trial" },
   { href: "/support", label: "Support" },
   { href: "/settings", label: "Settings" },
 ];

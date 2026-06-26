@@ -46,7 +46,9 @@ export default function BillingPage() {
     <AppShell user={user} onLogout={logout}>
       <h1 className="mb-1 text-2xl font-bold">Billing</h1>
       <p className="mb-6 text-sm text-slate-500">
-        Plans are billed monthly by daily post quota. Status:{" "}
+        Plans are billed monthly by your daily post limit — an{" "}
+        <strong>up-to</strong> cap, not a guarantee (some days have fewer
+        in-field leads). Status:{" "}
         <span className="font-medium capitalize">{sub?.status ?? "—"}</span>
         {sub && (
           <>
@@ -72,7 +74,7 @@ export default function BillingPage() {
                 <span className="text-sm font-normal text-slate-400">/mo</span>
               </div>
               <div className="mt-2 text-sm text-slate-500">
-                {p.daily_post_quota} AI posts / day
+                Up to {p.daily_post_quota} AI {p.daily_post_quota === 1 ? "post" : "posts"} / day
               </div>
               <button
                 className={`mt-4 ${current ? "btn-ghost" : "btn-primary"}`}

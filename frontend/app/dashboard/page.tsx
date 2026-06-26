@@ -80,7 +80,13 @@ export default function DashboardPage() {
     <AppShell user={user} onLogout={logout}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <span className="lp-live text-xs font-semibold uppercase tracking-wide text-green-600">
+              <span className="lp-live-core" aria-hidden />
+              Live
+            </span>
+          </div>
           <p className="text-sm text-slate-500">
             AI watches your local feeds and drafts replies for leads in your
             trade. You approve before anything posts.
@@ -205,7 +211,7 @@ function Stat({
         {label}
       </div>
       <div
-        className={`mt-1 text-2xl font-bold ${
+        className={`lp-stat mt-1 text-2xl font-bold ${
           highlight ? "text-red-600" : "text-slate-800"
         }`}
       >

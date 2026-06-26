@@ -90,6 +90,8 @@ class User(Base):
         Enum(UserRole), default=UserRole.provider
     )
     business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Contact person's name (captured on the in-app free-trial / referral form).
+    contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     nextdoor_handle: Mapped[str | None] = mapped_column(String(255), nullable=True)
     onboarding_source: Mapped[str] = mapped_column(String(40), default="self")

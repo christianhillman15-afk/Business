@@ -74,6 +74,7 @@ export interface User {
   email: string;
   role: "provider" | "admin";
   business_name: string | null;
+  contact_name: string | null;
   phone: string | null;
   nextdoor_handle: string | null;
   onboarding_source: string;

@@ -40,6 +40,7 @@ class StartTrialRequest(BaseModel):
     AI after a prospect accepts a trial)."""
 
     email: EmailStr
+    name: str | None = None
     business_name: str | None = None
     phone: str | None = None
     nextdoor_handle: str | None = None
@@ -66,6 +67,7 @@ class UserOut(ORMModel):
     email: EmailStr
     role: UserRole
     business_name: str | None
+    contact_name: str | None
     phone: str | None
     nextdoor_handle: str | None
     onboarding_source: str
