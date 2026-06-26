@@ -543,3 +543,92 @@ def test_sms_command_stop_and_start_opt_out(client: TestClient):
     assert client.get("/api/auth/me", headers=h).json()["sms_enabled"] is False
     client.post("/api/sms/inbound", data={"From": "+15558813434", "Body": "START"})
     assert client.get("/api/auth/me", headers=h).json()["sms_enabled"] is True
+
+
+def _new_client_id(client: TestClient, admin_headers: dict) -> tuple[int, dict]:
+    email = f"crm-{uuid.uuid4().hex[:8]}@leadpilot.io"
+    tok = client.post(
+        "/api/auth/register", json={"email": email, "password": "password123"}
+    ).json()["access_token"]
+    h = {"Authorization": f"Bearer {tok}"}
+    users = client.get("/api/admin/users", headers=admin_headers).json()
+    cid = next(u["id"] for u in users if u["email"] == email)
+    return cid, h
+
+
+def test_admin_client_crm(client: TestClient, admin_headers: dict):
+    cid, _ = _new_client_id(client, admin_headers)
+
+    detail = client.get(f"/api/admin/clients/{cid}", headers=admin_headers).json()
+    assert detail["client_status"] == "enabled" and detail["services"] == []
+
+    upd = client.patch(
+        f"/api/admin/clients/{cid}",
+        headers=admin_headers,
+        json={
+            "business_name": "Maple Cleaners",
+            "contact_name": "Dana",
+            "city": "Rivertown",
+            "state": "OH",
+            "service_radius_miles": 25,
+            "client_notes": "Great client, pays on time.",
+            "bot_notes": "Texts fast, very positive about the product.",
+            "claimed_by": "Christian",
+            "services": ["leak repair", "water heaters"],
+        },
+    ).json()
+    assert upd["city"] == "Rivertown" and upd["service_radius_miles"] == 25
+    assert upd["claimed_by"] == "Christian"
+    assert "leak repair" in upd["services"]
+    assert upd["bot_notes"].startswith("Texts fast")
+
+    # Contacts: add then remove.
+    withc = client.post(
+        f"/api/admin/clients/{cid}/contacts",
+        headers=admin_headers,
+        json={"name": "Jordan", "phone": "(555) 222-3333", "email": "j@x.io"},
+    ).json()
+    contact = next(c for c in withc["contacts"] if c["name"] == "Jordan")
+    after = client.delete(
+        f"/api/admin/clients/{cid}/contacts/{contact['id']}", headers=admin_headers
+    ).json()
+    assert all(c["id"] != contact["id"] for c in after["contacts"])
+
+    # Trial controls.
+    tr = client.patch(
+        f"/api/admin/clients/{cid}/trial",
+        headers=admin_headers,
+        json={"days_left": 5},
+    ).json()
+    assert tr["trial_active"] is True and tr["trial_days_left"] in (4, 5)
+    ended = client.patch(
+        f"/api/admin/clients/{cid}/trial",
+        headers=admin_headers,
+        json={"trial_active": False},
+    ).json()
+    assert ended["trial_active"] is False
+
+
+def test_admin_crm_requires_admin(client: TestClient, provider_headers: dict):
+    assert client.get("/api/admin/clients", headers=provider_headers).status_code == 403
+
+
+def test_disabled_client_gets_no_texts(
+    client: TestClient, admin_headers: dict, monkeypatch
+):
+    import app.services as services
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        services, "send_sms", lambda to, body: sent.append((to, body)) or True
+    )
+    cid, h = _new_client_id(client, admin_headers)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 444-5555"})
+    client.patch(
+        f"/api/admin/clients/{cid}",
+        headers=admin_headers,
+        json={"client_status": "disabled"},
+    )
+    client.post("/api/leads/discover", headers=h)
+    # Disabled clients receive no AI bot texts.
+    assert sent == []

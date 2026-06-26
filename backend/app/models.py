@@ -98,10 +98,26 @@ class User(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
     automation_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # --- CRM (admin-managed) -------------------------------------------------
+    city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # How far outside their city (miles) to look for leads.
+    service_radius_miles: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Free-text notes the team writes about the client.
+    client_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Notes the assigned bot keeps about the client's behavior/sentiment.
+    bot_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which teammate has "claimed" this client (so others don't double-contact).
+    claimed_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Master switch: "enabled" clients receive AI bot texts; "disabled" don't.
+    client_status: Mapped[str] = mapped_column(String(16), default="enabled")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     subscription: Mapped["Subscription"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    contacts: Mapped[list["ClientContact"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
     pricing_profile: Mapped["ClientPricingProfile"] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"
@@ -149,6 +165,21 @@ class ClientPricingProfile(Base):
     target_neighborhoods: Mapped[str] = mapped_column(Text, default="")
 
     user: Mapped[User] = relationship(back_populates="pricing_profile")
+
+
+class ClientContact(Base):
+    """A way to reach the client (the team can store several per client)."""
+
+    __tablename__ = "client_contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    user: Mapped[User] = relationship(back_populates="contacts")
 
 
 class ConnectedAccount(Base):

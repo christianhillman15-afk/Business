@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { DEMO } from "@/lib/demo";
+import { ADMIN_TOKEN, DEMO } from "@/lib/demo";
 import { setToken } from "@/lib/api";
 
 // Thin strip shown only in the static demo build. Gives anyone who opens the
@@ -10,9 +10,9 @@ export function DemoBanner() {
   const router = useRouter();
   if (!DEMO) return null;
 
-  function openDashboard() {
-    setToken("demo-token");
-    router.push("/dashboard");
+  function open(token: string, path: string) {
+    setToken(token);
+    router.push(path);
   }
 
   return (
@@ -22,10 +22,16 @@ export function DemoBanner() {
         sign-up needed.
       </span>
       <button
-        onClick={openDashboard}
+        onClick={() => open("demo-token", "/dashboard")}
         className="rounded-full bg-white px-3 py-0.5 text-[11px] font-semibold text-slate-900 hover:bg-slate-100"
       >
         Open the dashboard →
+      </button>
+      <button
+        onClick={() => open(ADMIN_TOKEN, "/admin")}
+        className="rounded-full border border-white/30 px-3 py-0.5 text-[11px] font-semibold text-white hover:bg-white/10"
+      >
+        Admin view →
       </button>
     </div>
   );

@@ -10,6 +10,8 @@ from ..deps import require_admin
 from ..models import (
     AgentResponse,
     AuditLog,
+    ClientContact,
+    ClientPricingProfile,
     ConnectedAccount,
     ConnectionHealth,
     LeadMatch,
@@ -21,7 +23,8 @@ from ..models import (
     User,
     UserRole,
 )
-from datetime import datetime, timezone
+import math
+from datetime import datetime, timedelta, timezone
 
 from ..config import settings
 from ..email import send_email
@@ -29,10 +32,15 @@ from ..notifications import notify
 from ..schemas import (
     AdminUserOut,
     AuditLogOut,
+    ClientContactIn,
+    ClientDetail,
+    ClientSummary,
+    ClientUpdate,
     ConvertRecruitRequest,
     ManagedAccountOut,
     RecruitOut,
     TicketOut,
+    TrialUpdate,
 )
 from ..security import create_magic_token
 from ..services import create_trial_user, run_recruiting
@@ -243,3 +251,184 @@ def run_discovery_all(
         ):
             total += len(run_discovery(db, p))
     return {"providers_scanned": len(providers), "leads_created": total}
+
+
+# --- Client CRM -------------------------------------------------------------
+def _get_provider(db: Session, client_id: int) -> User:
+    u = db.get(User, client_id)
+    if not u or u.role != UserRole.provider:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return u
+
+
+def _services(user: User) -> list[str]:
+    raw = user.pricing_profile.service_categories if user.pricing_profile else ""
+    return [s.strip() for s in (raw or "").split(",") if s.strip()]
+
+
+def _trial_info(user: User):
+    sub = user.subscription
+    active = bool(sub and sub.status == SubscriptionStatus.trialing)
+    end = sub.trial_end if sub else None
+    days = None
+    if end is not None:
+        e = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
+        days = max(0, math.ceil((e - datetime.now(timezone.utc)).total_seconds() / 86400))
+    return active, days, end
+
+
+def _summary(user: User) -> ClientSummary:
+    active, days, _ = _trial_info(user)
+    return ClientSummary(
+        id=user.id,
+        business_name=user.business_name,
+        contact_name=user.contact_name,
+        city=user.city,
+        state=user.state,
+        client_status=user.client_status,
+        claimed_by=user.claimed_by,
+        plan_code=user.subscription.plan_code if user.subscription else None,
+        trial_active=active,
+        trial_days_left=days,
+    )
+
+
+def _detail(user: User) -> ClientDetail:
+    active, days, end = _trial_info(user)
+    return ClientDetail(
+        id=user.id,
+        email=user.email,
+        business_name=user.business_name,
+        contact_name=user.contact_name,
+        phone=user.phone,
+        city=user.city,
+        state=user.state,
+        service_radius_miles=user.service_radius_miles,
+        client_notes=user.client_notes,
+        bot_notes=user.bot_notes,
+        claimed_by=user.claimed_by,
+        client_status=user.client_status,
+        trade=user.pricing_profile.trade if user.pricing_profile else None,
+        services=_services(user),
+        plan_code=user.subscription.plan_code if user.subscription else None,
+        trial_active=active,
+        trial_days_left=days,
+        trial_end=end,
+        contacts=[
+            {"id": c.id, "name": c.name, "phone": c.phone, "email": c.email}
+            for c in user.contacts
+        ],
+    )
+
+
+@router.get("/clients", response_model=list[ClientSummary])
+def list_clients(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    users = (
+        db.execute(
+            select(User)
+            .where(User.role == UserRole.provider)
+            .order_by(User.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return [_summary(u) for u in users]
+
+
+@router.get("/clients/{client_id}", response_model=ClientDetail)
+def get_client(
+    client_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    return _detail(_get_provider(db, client_id))
+
+
+@router.patch("/clients/{client_id}", response_model=ClientDetail)
+def update_client(
+    client_id: int,
+    payload: ClientUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    user = _get_provider(db, client_id)
+    data = payload.model_dump(exclude_unset=True)
+    services = data.pop("services", None)
+    trade = data.pop("trade", None)
+    for key, value in data.items():
+        setattr(user, key, value)
+    if trade is not None or services is not None:
+        prof = user.pricing_profile
+        if prof is None:
+            prof = ClientPricingProfile(user_id=user.id)
+            user.pricing_profile = prof
+            db.add(prof)
+        if trade is not None:
+            prof.trade = trade
+        if services is not None:
+            prof.service_categories = ", ".join(services)
+    db.commit()
+    db.refresh(user)
+    return _detail(user)
+
+
+@router.patch("/clients/{client_id}/trial", response_model=ClientDetail)
+def update_trial(
+    client_id: int,
+    payload: TrialUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    user = _get_provider(db, client_id)
+    sub = user.subscription
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Client has no subscription")
+    if payload.days_left is not None:
+        sub.trial_end = datetime.now(timezone.utc) + timedelta(
+            days=max(0, payload.days_left)
+        )
+        sub.status = SubscriptionStatus.trialing
+    if payload.trial_active is not None:
+        sub.status = (
+            SubscriptionStatus.trialing
+            if payload.trial_active
+            else SubscriptionStatus.active
+        )
+    db.commit()
+    db.refresh(user)
+    return _detail(user)
+
+
+@router.post("/clients/{client_id}/contacts", response_model=ClientDetail)
+def add_contact(
+    client_id: int,
+    payload: ClientContactIn,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    user = _get_provider(db, client_id)
+    db.add(
+        ClientContact(
+            user_id=user.id,
+            name=payload.name,
+            phone=payload.phone,
+            email=payload.email,
+        )
+    )
+    db.commit()
+    db.refresh(user)
+    return _detail(user)
+
+
+@router.delete("/clients/{client_id}/contacts/{contact_id}", response_model=ClientDetail)
+def delete_contact(
+    client_id: int,
+    contact_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    user = _get_provider(db, client_id)
+    contact = db.get(ClientContact, contact_id)
+    if contact and contact.user_id == user.id:
+        db.delete(contact)
+        db.commit()
+        db.refresh(user)
+    return _detail(user)

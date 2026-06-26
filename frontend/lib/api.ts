@@ -168,3 +168,46 @@ export interface Notification {
   read: boolean;
   created_at: string;
 }
+
+// --- Admin: client CRM ------------------------------------------------------
+export interface ClientContact {
+  id: number;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+}
+
+export interface ClientSummary {
+  id: number;
+  business_name: string | null;
+  contact_name: string | null;
+  city: string | null;
+  state: string | null;
+  client_status: string;
+  claimed_by: string | null;
+  plan_code: string | null;
+  trial_active: boolean;
+  trial_days_left: number | null;
+}
+
+export interface ClientDetail {
+  id: number;
+  email: string;
+  business_name: string | null;
+  contact_name: string | null;
+  phone: string | null;
+  city: string | null;
+  state: string | null;
+  service_radius_miles: number | null;
+  client_notes: string | null;
+  bot_notes: string | null;
+  claimed_by: string | null;
+  client_status: string;
+  trade: string | null;
+  services: string[];
+  plan_code: string | null;
+  trial_active: boolean;
+  trial_days_left: number | null;
+  trial_end: string | null;
+  contacts: ClientContact[];
+}

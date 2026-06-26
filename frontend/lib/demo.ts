@@ -11,6 +11,8 @@
 import type {
   Broadcast,
   Capabilities,
+  ClientDetail,
+  ClientSummary,
   ConnectedAccount,
   Lead,
   Notification as Notif,
@@ -24,8 +26,17 @@ import type {
 export const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 const DEMO_TOKEN = "demo-token";
+export const ADMIN_TOKEN = "demo-admin-token";
 export function isDemoToken(t: string | null) {
-  return t === DEMO_TOKEN;
+  return t === DEMO_TOKEN || t === ADMIN_TOKEN;
+}
+
+function isAdmin(): boolean {
+  try {
+    return window.localStorage.getItem("leadpilot_token") === ADMIN_TOKEN;
+  } catch {
+    return false;
+  }
 }
 
 const ago = (mins: number) => new Date(Date.now() - mins * 60000).toISOString();
@@ -264,6 +275,142 @@ const s: {
   nextId: 1000,
 };
 
+// --- Admin (CRM) demo data --------------------------------------------------
+const adminUser: User = {
+  id: 99,
+  email: "admin@leadpilot.io",
+  role: "admin",
+  business_name: "LeadPilot HQ",
+  contact_name: "Christian",
+  phone: null,
+  nextdoor_handle: null,
+  onboarding_source: "admin",
+  timezone: "America/New_York",
+  automation_enabled: true,
+  sms_enabled: true,
+};
+
+let contactSeq = 9000;
+
+const adminClients: ClientDetail[] = [
+  {
+    id: 1,
+    email: "jordan@rivertownplumbing.com",
+    business_name: "Rivertown Plumbing Co.",
+    contact_name: "Jordan Rivers",
+    phone: "(555) 014-7788",
+    city: "Rivertown",
+    state: "OH",
+    service_radius_miles: 20,
+    client_notes:
+      "Long-time client, pays on time. Wants more water-heater jobs in winter.",
+    bot_notes:
+      "Texts back within minutes and is very upbeat about the product — already booked 3 jobs. Prefers short, casual replies and likes when we mention same-day service.",
+    claimed_by: "Christian",
+    client_status: "enabled",
+    trade: "plumbing",
+    services: [
+      "leak repair",
+      "water heater install",
+      "drain cleaning",
+      "toilet repair",
+    ],
+    plan_code: "growth",
+    trial_active: false,
+    trial_days_left: null,
+    trial_end: null,
+    contacts: [
+      { id: 8001, name: "Jordan (owner)", phone: "(555) 014-7788", email: "jordan@rivertownplumbing.com" },
+      { id: 8002, name: "Dispatch line", phone: "(555) 014-2200", email: null },
+    ],
+  },
+  {
+    id: 2,
+    email: "maria@sparkleclean.co",
+    business_name: "Sparkle Home Cleaning",
+    contact_name: "Maria Lopez",
+    phone: "(555) 220-9100",
+    city: "Maple Heights",
+    state: "OH",
+    service_radius_miles: 15,
+    client_notes: "Signed up last week. Eager but new to Nextdoor.",
+    bot_notes:
+      "Replies a few times a day, asks a lot of how-to questions. Friendly but needs hand-holding on connecting accounts.",
+    claimed_by: null,
+    client_status: "enabled",
+    trade: "house cleaning",
+    services: ["recurring cleaning", "deep cleaning", "move-out cleaning"],
+    plan_code: "starter",
+    trial_active: true,
+    trial_days_left: 4,
+    trial_end: new Date(Date.now() + 4 * 86400000).toISOString(),
+    contacts: [
+      { id: 8003, name: "Maria", phone: "(555) 220-9100", email: "maria@sparkleclean.co" },
+    ],
+  },
+  {
+    id: 3,
+    email: "deshawn@greenbladelawn.com",
+    business_name: "GreenBlade Lawncare",
+    contact_name: "DeShawn Carter",
+    phone: "(555) 771-3030",
+    city: "Oakwood",
+    state: "OH",
+    service_radius_miles: 30,
+    client_notes: "Seasonal — wants to pause in winter. Follow up in March.",
+    bot_notes:
+      "Slow to respond (1–2 days) and a bit skeptical of AI. Warmed up after the first booked job. Keep replies plain and no-nonsense.",
+    claimed_by: "Alex",
+    client_status: "enabled",
+    trade: "landscaping",
+    services: ["weekly mowing", "leaf cleanup", "mulching", "hedge trimming"],
+    plan_code: "growth",
+    trial_active: true,
+    trial_days_left: 1,
+    trial_end: new Date(Date.now() + 1 * 86400000).toISOString(),
+    contacts: [
+      { id: 8004, name: "DeShawn", phone: "(555) 771-3030", email: "deshawn@greenbladelawn.com" },
+    ],
+  },
+  {
+    id: 4,
+    email: "tony@trucoatpainting.com",
+    business_name: "TruCoat Painters",
+    contact_name: "Tony Russo",
+    phone: "(555) 660-1212",
+    city: "Rivertown",
+    state: "OH",
+    service_radius_miles: 25,
+    client_notes: "Trial expired, hasn't picked a plan. Paused texts for now.",
+    bot_notes:
+      "Went quiet after the trial. Last texts were positive but said 'need to think about budget.' Good candidate for a call about the Solo plan.",
+    claimed_by: null,
+    client_status: "disabled",
+    trade: "painting",
+    services: ["interior painting", "exterior painting", "cabinet refinishing"],
+    plan_code: "solo",
+    trial_active: false,
+    trial_days_left: null,
+    trial_end: null,
+    contacts: [],
+  },
+];
+
+function clientSummary(c: ClientDetail): ClientSummary {
+  return {
+    id: c.id,
+    business_name: c.business_name,
+    contact_name: c.contact_name,
+    city: c.city,
+    state: c.state,
+    client_status: c.client_status,
+    claimed_by: c.claimed_by,
+    plan_code: c.plan_code,
+    trial_active: c.trial_active,
+    trial_days_left: c.trial_days_left,
+  };
+}
+
 // Pool of leads revealed one-at-a-time when the user clicks "Scan for leads".
 const DISCOVERY_POOL = [
   {
@@ -309,7 +456,11 @@ function route(method: string, path: string, body: any): unknown {
 
   // --- auth ---------------------------------------------------------------
   if (path === "/api/auth/login" && method === "POST")
-    return { access_token: DEMO_TOKEN };
+    return {
+      access_token: (body?.email ?? "").toLowerCase().includes("admin")
+        ? ADMIN_TOKEN
+        : DEMO_TOKEN,
+    };
   if (path === "/api/auth/register" && method === "POST")
     return { access_token: DEMO_TOKEN };
   if (path === "/api/auth/start-trial" && method === "POST")
@@ -318,7 +469,7 @@ function route(method: string, path: string, body: any): unknown {
     return { ok: true };
   if (path === "/api/auth/magic/verify" && method === "POST")
     return { access_token: DEMO_TOKEN };
-  if (path === "/api/auth/me") return s.user;
+  if (path === "/api/auth/me") return isAdmin() ? adminUser : s.user;
 
   // --- catalog / read models ---------------------------------------------
   if (path === "/api/plans") return PLANS;
@@ -554,7 +705,57 @@ function route(method: string, path: string, body: any): unknown {
     return { ticket_id: 1, reply, escalated };
   }
 
-  // --- admin (demo user is a provider, so these are stubs) -----------------
+  // --- admin: client CRM --------------------------------------------------
+  if (path === "/api/admin/clients" && method === "GET")
+    return adminClients.map(clientSummary);
+  mm = m(/^\/api\/admin\/clients\/(\d+)$/);
+  if (mm) {
+    const cid = Number(mm[1]);
+    const client = adminClients.find((c) => c.id === cid);
+    if (!client) return notFound(path);
+    if (method === "GET") return client;
+    if (method === "PATCH") {
+      const { services, trade, ...rest } = body ?? {};
+      Object.assign(client, rest);
+      if (trade !== undefined) client.trade = trade;
+      if (services !== undefined) client.services = services;
+      return client;
+    }
+  }
+  mm = m(/^\/api\/admin\/clients\/(\d+)\/trial$/);
+  if (mm && method === "PATCH") {
+    const client = adminClients.find((c) => c.id === Number(mm![1]));
+    if (!client) return notFound(path);
+    if (body?.days_left !== undefined) {
+      const d = Math.max(0, Number(body.days_left));
+      client.trial_days_left = d;
+      client.trial_active = true;
+      client.trial_end = new Date(Date.now() + d * 86400000).toISOString();
+    }
+    if (body?.trial_active !== undefined) client.trial_active = !!body.trial_active;
+    return client;
+  }
+  mm = m(/^\/api\/admin\/clients\/(\d+)\/contacts$/);
+  if (mm && method === "POST") {
+    const client = adminClients.find((c) => c.id === Number(mm![1]));
+    if (!client) return notFound(path);
+    client.contacts.push({
+      id: ++contactSeq,
+      name: body?.name ?? null,
+      phone: body?.phone ?? null,
+      email: body?.email ?? null,
+    });
+    return client;
+  }
+  mm = m(/^\/api\/admin\/clients\/(\d+)\/contacts\/(\d+)$/);
+  if (mm && method === "DELETE") {
+    const client = adminClients.find((c) => c.id === Number(mm![1]));
+    if (!client) return notFound(path);
+    client.contacts = client.contacts.filter((ct) => ct.id !== Number(mm![2]));
+    return client;
+  }
+
+  // --- admin (other endpoints are stubbed in the demo) --------------------
   if (path.startsWith("/api/admin/")) {
     if (path.includes("stats")) return {};
     return [];

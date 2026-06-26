@@ -209,7 +209,7 @@ def run_discovery(db: Session, user: User, *, limit: int = 6) -> list[LeadMatch]
 
     # Text the customer each new lead, with the AI reply as a separate message
     # so it's a one-tap copy on their phone.
-    if user.phone and user.sms_enabled:
+    if user.phone and user.sms_enabled and user.client_status != "disabled":
         for lead, text in pending_sms:
             location = f" • {lead.location}" if lead.location else ""
             link = f"\n{lead.post_url}" if lead.post_url else ""

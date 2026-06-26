@@ -289,3 +289,72 @@ class ManagedAccountOut(BaseModel):
     business_name: str | None
     email: EmailStr
     connected_at: datetime
+
+
+# --- Admin: client CRM ------------------------------------------------------
+class ClientContactIn(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
+class ClientContactOut(BaseModel):
+    id: int
+    name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
+class ClientSummary(BaseModel):
+    id: int
+    business_name: str | None
+    contact_name: str | None
+    city: str | None
+    state: str | None
+    client_status: str
+    claimed_by: str | None
+    plan_code: str | None
+    trial_active: bool
+    trial_days_left: int | None
+
+
+class ClientDetail(BaseModel):
+    id: int
+    email: EmailStr
+    business_name: str | None
+    contact_name: str | None
+    phone: str | None
+    city: str | None
+    state: str | None
+    service_radius_miles: int | None
+    client_notes: str | None
+    bot_notes: str | None
+    claimed_by: str | None
+    client_status: str
+    trade: str | None
+    services: list[str]
+    plan_code: str | None
+    trial_active: bool
+    trial_days_left: int | None
+    trial_end: datetime | None
+    contacts: list[ClientContactOut]
+
+
+class ClientUpdate(BaseModel):
+    business_name: str | None = None
+    contact_name: str | None = None
+    phone: str | None = None
+    city: str | None = None
+    state: str | None = None
+    service_radius_miles: int | None = None
+    client_notes: str | None = None
+    bot_notes: str | None = None
+    claimed_by: str | None = None
+    client_status: str | None = None
+    trade: str | None = None
+    services: list[str] | None = None
+
+
+class TrialUpdate(BaseModel):
+    days_left: int | None = None
+    trial_active: bool | None = None

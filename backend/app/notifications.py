@@ -28,7 +28,12 @@ def notify(
     db.refresh(n)
     if email:
         send_email(user.email, title, body or title)
-    if sms and user.phone and user.sms_enabled:
+    if (
+        sms
+        and user.phone
+        and user.sms_enabled
+        and getattr(user, "client_status", "enabled") != "disabled"
+    ):
         send_sms(user.phone, f"{title}\n{body}".strip())
     return n
 
