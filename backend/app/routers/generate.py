@@ -40,6 +40,17 @@ def _used_today(db: Session, user: User) -> int:
 
 def _usage(db: Session, user: User) -> GenerationUsage:
     used = _used_today(db, user)
+    # Inactive (expired trial / canceled / no plan): no generations until they
+    # pick a plan. Report honestly so the UI shows the upgrade prompt, not
+    # "unlimited".
+    if not subscription_active(user):
+        return GenerationUsage(
+            used_today=used,
+            daily_limit=0,
+            remaining=0,
+            unlimited=False,
+            on_trial=on_trial(user),
+        )
     if on_trial(user):
         limit = settings.trial_generation_quota
         return GenerationUsage(

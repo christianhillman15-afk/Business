@@ -662,3 +662,30 @@ def test_generate_paid_unlimited(client: TestClient, provider_headers: dict):
     assert r.json()["usage"]["unlimited"] is True
     hist = client.get("/api/generate/history", headers=provider_headers).json()
     assert len(hist) >= 1 and hist[0]["reply"]
+
+
+def test_generate_usage_inactive_subscription(client: TestClient):
+    # An inactive (canceled) subscription must NOT report unlimited generations.
+    from app.database import SessionLocal
+    from app.models import Subscription, SubscriptionStatus, User, UserRole
+    from app.routers.generate import _usage
+    from app.security import hash_password
+
+    db = SessionLocal()
+    try:
+        u = User(
+            email=f"inact-{uuid.uuid4().hex[:6]}@leadpilot.io",
+            password_hash=hash_password("password123"),
+            role=UserRole.provider,
+        )
+        u.subscription = Subscription(
+            plan_code="growth", status=SubscriptionStatus.canceled
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        usage = _usage(db, u)
+        assert usage.unlimited is False
+        assert usage.daily_limit == 0 and usage.remaining == 0
+    finally:
+        db.close()
