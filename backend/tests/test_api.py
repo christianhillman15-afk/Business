@@ -500,3 +500,46 @@ def test_sms_inbound_two_way_remembers_conversation(client: TestClient):
     )
     assert second.status_code == 200
     assert "<Message>" in second.text
+
+
+def test_notifications_texted_to_customer(client: TestClient, monkeypatch):
+    import app.notifications as notifications
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        notifications, "send_sms", lambda to, body: sent.append((to, body)) or True
+    )
+    h = _fresh_provider(client)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 330-7788"})
+    lead = _collect_draft_for(client, h, "facebook")
+    assert lead is not None, "expected a drafted Facebook lead"
+    rid = lead["response"]["id"]
+    res = client.post(f"/api/responses/{rid}/approve", headers=h)
+    assert res.status_code == 200
+    # The "reply posted" notification was delivered as a text.
+    assert len(sent) >= 1 and all(body for _, body in sent)
+
+
+def test_sms_command_status_and_help(client: TestClient):
+    h = _fresh_provider(client)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 880-1212"})
+    status = client.post(
+        "/api/sms/inbound", data={"From": "+15558801212", "Body": "STATUS"}
+    )
+    assert status.status_code == 200 and "Plan:" in status.text
+    helped = client.post(
+        "/api/sms/inbound", data={"From": "+15558801212", "Body": "HELP"}
+    )
+    assert "STATUS" in helped.text and "STOP" in helped.text
+
+
+def test_sms_command_stop_and_start_opt_out(client: TestClient):
+    h = _fresh_provider(client)
+    client.patch("/api/account", headers=h, json={"phone": "(555) 881-3434"})
+    stop = client.post(
+        "/api/sms/inbound", data={"From": "+15558813434", "Body": "stop"}
+    )
+    assert "unsubscribed" in stop.text
+    assert client.get("/api/auth/me", headers=h).json()["sms_enabled"] is False
+    client.post("/api/sms/inbound", data={"From": "+15558813434", "Body": "START"})
+    assert client.get("/api/auth/me", headers=h).json()["sms_enabled"] is True

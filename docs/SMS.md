@@ -13,6 +13,26 @@ This is gated on the customer's `phone` being set and the **"Text me new
 leads"** toggle (Settings) being on. See `run_discovery()` in
 `backend/app/services.py`.
 
+**Every other update is a text too.** The central `notify()` helper
+(`backend/app/notifications.py`) texts the customer for all account events —
+reply posted, quota used up, trial ending/ended, billing changes, managed page
+live — so the whole product runs over SMS, not just leads.
+
+## Text commands
+
+Customers can text these any time (matched on the whole message):
+
+| Text     | What it does                                            |
+| -------- | ------------------------------------------------------- |
+| `STATUS` | Their plan, daily cap, posts used today, and remaining. |
+| `LEADS`  | How many leads are waiting to review (+ dashboard link).|
+| `HELP`   | What LeadPilot does and the available commands.         |
+| `STOP`   | Opt out of all texts (also UNSUBSCRIBE/CANCEL/END/QUIT).|
+| `START`  | Opt back in (also UNSTOP/YES).                          |
+
+Anything else is answered conversationally by the assistant. `STOP`/`START`
+keep the carrier opt-out rules satisfied at the app level too.
+
 ## Two-way bot (text your assistant)
 
 Customers can text their LeadPilot number any question — "what's my plan?",
