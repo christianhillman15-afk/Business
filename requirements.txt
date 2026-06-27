@@ -1,0 +1,11 @@
+# Core (detection + paper trading) — lightweight, no blockchain deps.
+requests>=2.31
+PyYAML>=6.0
+
+# Optional: load secrets from a .env file.
+python-dotenv>=1.0
+
+# Optional: ONLY needed for live following (follow.enabled + follow.dry_run=false).
+# Pulls in web3 and other heavy deps. Install separately when you go live:
+#   pip install py-clob-client
+# py-clob-client>=0.17

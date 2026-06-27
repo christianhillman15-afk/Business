@@ -1,0 +1,90 @@
+# Polymarket whale-bot configuration.
+# Copy this to `config.yaml` and tune. Secrets are NOT stored here — they come
+# from environment variables / a .env file (see .env.example).
+
+polymarket:
+  data_api: https://data-api.polymarket.com
+  gamma_api: https://gamma-api.polymarket.com
+  clob_api: https://clob.polymarket.com
+
+poll:
+  interval_seconds: 15      # how often to pull the trade feed
+  trades_per_poll: 500      # how many recent trades to fetch each poll
+  taker_only: true          # only count aggressive (taker) fills
+
+filters:
+  condition_ids: []         # restrict to these markets (empty = ALL markets)
+  sides: [BUY]              # which sides are "suspicious" (BUY = buying pressure)
+
+detection:
+  large_trade_usd: 5000     # flag any single buy at/above this USDC notional
+  min_price: 0.0            # ignore aggressive buys below this price (0 = off)
+
+  accumulation:             # one wallet quietly building a position
+    enabled: true
+    window_minutes: 30
+    min_total_usd: 10000
+    min_trades: 3
+
+  coordinated:              # many wallets piling into the same outcome fast
+    enabled: true
+    window_minutes: 10
+    min_wallets: 4
+    min_total_usd: 15000
+
+  watchlist:                # always alert on these wallets (known whales)
+    wallets: []             # e.g. ["0xabc...", "0xdef..."]
+    min_usd: 500
+
+notifications:
+  console: true
+  file:
+    enabled: true
+    path: ./alerts.jsonl
+  webhook:                  # Discord/Slack-compatible incoming webhook
+    enabled: false
+    url_env: WHALEBOT_WEBHOOK_URL   # set the URL in this env var
+  telegram:
+    enabled: false
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    chat_id: ""
+
+# ── Paper trading ("demo account") ───────────────────────────────────────
+# Fake-money tracker so you can measure whether the signals actually win
+# BEFORE risking real funds. Auto-"buys" flagged outcomes and settles them
+# against real market resolutions to compute a win rate.
+paper:
+  enabled: true
+  starting_balance: 1000    # fake USDC bankroll
+  stake_usd: 50             # fake $ committed per flagged trade
+  max_position_usd: 200     # cap exposure per market outcome
+  max_price: 0.97           # don't paper-buy near-certain outcomes
+  trigger_signals: [large_trade, accumulation, coordinated, watchlist]
+  ledger_path: ./paper_ledger.jsonl
+  settle_interval_minutes: 30
+
+# ── Live following (OFF by default) ──────────────────────────────────────
+# Actually place real orders that follow the whale. Keep dry_run: true until
+# you fully trust the signals. Requires py-clob-client + a funded wallet.
+follow:
+  enabled: false
+  dry_run: true             # true = log the order but DON'T send it
+  trigger_signals: [large_trade, accumulation, watchlist]
+  sizing:
+    mode: fixed             # fixed | percent
+    fixed_usd: 50
+    percent_of_whale: 1.0   # used when mode = percent
+    max_usd: 200
+  max_price: 0.95
+  order_type: GTC           # GTC | FOK
+  daily_max_usd: 1000       # hard safety cap on follow spend per day
+  private_key_env: POLYMARKET_PRIVATE_KEY
+  funder_env: POLYMARKET_FUNDER
+  chain_id: 137
+
+state:
+  path: ./whalebot_state.json
+  dedup_ttl_minutes: 120
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR

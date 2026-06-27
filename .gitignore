@@ -1,0 +1,17 @@
+# secrets & local config
+.env
+config.yaml
+
+# runtime artifacts
+*.jsonl
+whalebot_state.json
+whalebot_state.json.tmp
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+.coverage
