@@ -86,6 +86,18 @@ follow:
   funder_env: POLYMARKET_FUNDER
   chain_id: 137
 
+# ── Web dashboard ────────────────────────────────────────────────────────
+# A browser page showing your paper account, open positions, and recent whale
+# alerts. Runs on the same server (no extra cost). Set a `token` to keep it
+# private — then only people with the link http://YOUR_IP:8080/?token=THE_TOKEN
+# can view it. Leave token empty for no lock (only fake-money data is shown).
+dashboard:
+  host: 0.0.0.0
+  port: 8080
+  token: ""                 # set to a long random string to make it private
+  recent_alerts: 50
+  refresh_seconds: 15
+
 state:
   path: ./whalebot_state.json
   dedup_ttl_minutes: 120

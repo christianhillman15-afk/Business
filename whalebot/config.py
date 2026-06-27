@@ -151,6 +151,24 @@ class PaperConfig:
 
 
 @dataclass
+class DashboardConfig:
+    """Web dashboard settings.
+
+    Serves a simple browser page (and a JSON API) showing the paper account,
+    open positions, and recent whale alerts. No extra dependencies — uses the
+    Python standard library only.
+    """
+
+    host: str = "0.0.0.0"  # 0.0.0.0 = reachable from your browser over the internet
+    port: int = 8080
+    # Optional access token. If set, the page requires ?token=... in the URL so
+    # random visitors can't view it. Empty = no token (fine; only fake-money data).
+    token: str = ""
+    recent_alerts: int = 50
+    refresh_seconds: int = 15
+
+
+@dataclass
 class StateConfig:
     path: str = "./whalebot_state.json"
     dedup_ttl_minutes: float = 120.0
@@ -165,6 +183,7 @@ class Config:
     notifications: NotificationsConfig = field(default_factory=NotificationsConfig)
     follow: FollowConfig = field(default_factory=FollowConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     state: StateConfig = field(default_factory=StateConfig)
     log_level: str = "INFO"
 

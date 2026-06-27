@@ -2,6 +2,7 @@
 
 Commands:
   run       start the polling daemon (default)
+  dashboard start the web dashboard (browser view of the paper account)
   report    print the current paper-account stats and exit
   settle    force a one-off settlement pass against market resolutions
   test      do a single poll cycle and exit (smoke test / cron-friendly)
@@ -41,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         nargs="?",
         default="run",
-        choices=["run", "report", "settle", "test"],
+        choices=["run", "dashboard", "report", "settle", "test"],
     )
     parser.add_argument("-c", "--config", default="config.yaml", help="path to config YAML")
     args = parser.parse_args(argv)
@@ -63,6 +64,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run":
         bot.run()
+    elif args.command == "dashboard":
+        from .dashboard import run_dashboard
+
+        run_dashboard(cfg)
     elif args.command == "report":
         print(bot.paper.report())
     elif args.command == "settle":

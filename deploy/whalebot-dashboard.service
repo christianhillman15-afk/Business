@@ -1,0 +1,26 @@
+# systemd service for the whale bot WEB DASHBOARD (runs alongside whalebot.service).
+#
+# Setup (after the main bot is already installed at /opt/whalebot):
+#   sudo cp deploy/whalebot-dashboard.service /etc/systemd/system/whalebot-dashboard.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now whalebot-dashboard
+#   Then open:  http://YOUR_SERVER_IP:8080/?token=YOUR_TOKEN
+#
+# Logs:  journalctl -u whalebot-dashboard -f
+
+[Unit]
+Description=Polymarket Whale Bot Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/whalebot
+EnvironmentFile=-/opt/whalebot/.env
+ExecStart=/opt/whalebot/.venv/bin/python -m whalebot dashboard -c config.yaml
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
