@@ -28,6 +28,10 @@ off by default and double-gated behind a dry-run flag and spend caps.
 
 ## Quick start
 
+> 👉 New here? See **[GETTING_STARTED.md](GETTING_STARTED.md)** for a copy/paste,
+> no-coding-required walkthrough (run on your computer, a cloud server, or Docker,
+> plus phone notifications).
+
 ```bash
 # 1. Install core dependencies (no blockchain libs needed for detection/paper).
 pip install -r requirements.txt

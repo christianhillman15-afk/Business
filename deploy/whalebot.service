@@ -1,0 +1,28 @@
+# systemd service for running the whale bot 24/7 on a Linux server/VPS.
+#
+# Setup:
+#   1. Put the repo at /opt/whalebot (or edit WorkingDirectory below).
+#   2. Create the venv:   cd /opt/whalebot && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#   3. Create config.yaml and .env in /opt/whalebot.
+#   4. sudo cp deploy/whalebot.service /etc/systemd/system/whalebot.service
+#   5. sudo systemctl daemon-reload && sudo systemctl enable --now whalebot
+#   6. Watch logs:  journalctl -u whalebot -f
+
+[Unit]
+Description=Polymarket Whale Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/whalebot
+EnvironmentFile=-/opt/whalebot/.env
+ExecStart=/opt/whalebot/.venv/bin/python -m whalebot run -c config.yaml
+Restart=always
+RestartSec=10
+# Basic hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
