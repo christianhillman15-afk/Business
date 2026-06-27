@@ -42,6 +42,8 @@ class PaperPosition:
     status: str = "open"  # open | won | lost
     settled_ts: float | None = None
     payout_usd: float = 0.0
+    slug: str = ""  # market slug, for linking to polymarket.com
+    event_slug: str = ""
 
     @property
     def pnl(self) -> float:
@@ -124,6 +126,8 @@ class PaperPortfolio:
             shares=shares,
             cost_usd=stake,
             opened_ts=now,
+            slug=sig.slug,
+            event_slug=sig.event_slug,
         )
         self.positions[pid] = pos
         self._append_ledger("open", pos, stake, now)

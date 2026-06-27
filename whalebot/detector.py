@@ -79,6 +79,8 @@ class Detector:
                     outcome=tr.outcome,
                     asset=tr.asset,
                     condition_id=tr.condition_id,
+                    slug=tr.slug,
+                    event_slug=tr.event_slug,
                     notional_usd=tr.notional,
                     price=tr.price,
                     message=f"watched wallet {tr.wallet[:10]}… bought {tr.size:,.0f} shares",
@@ -99,6 +101,8 @@ class Detector:
                         outcome=tr.outcome,
                         asset=tr.asset,
                         condition_id=tr.condition_id,
+                        slug=tr.slug,
+                        event_slug=tr.event_slug,
                         notional_usd=tr.notional,
                         price=tr.price,
                         message=(
@@ -131,6 +135,8 @@ class Detector:
                     outcome=tr.outcome,
                     asset=tr.asset,
                     condition_id=tr.condition_id,
+                    slug=tr.slug,
+                    event_slug=tr.event_slug,
                     notional_usd=total,
                     price=tr.price,
                     message=(
@@ -160,6 +166,8 @@ class Detector:
                     outcome=tr.outcome,
                     asset=tr.asset,
                     condition_id=tr.condition_id,
+                    slug=tr.slug,
+                    event_slug=tr.event_slug,
                     notional_usd=total,
                     price=tr.price,
                     message=(

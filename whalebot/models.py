@@ -78,6 +78,8 @@ class Signal:
     notional_usd: float
     price: float
     message: str
+    slug: str = ""
+    event_slug: str = ""
     trades: list[Trade] = field(default_factory=list)
     wallets: list[str] = field(default_factory=list)
 
@@ -98,6 +100,8 @@ class Signal:
             "notional_usd": round(self.notional_usd, 2),
             "price": self.price,
             "message": self.message,
+            "slug": self.slug,
+            "event_slug": self.event_slug,
             "wallets": self.wallets,
             "tx_hashes": [t.tx_hash for t in self.trades],
         }

@@ -41,6 +41,12 @@ def _cached_midpoint(client: PolymarketClient, token_id: str) -> float | None:
     return price
 
 
+def _market_url(event_slug: str, slug: str) -> str:
+    """Build a polymarket.com link from a market's slug (best-effort)."""
+    s = (event_slug or slug or "").strip()
+    return f"https://polymarket.com/event/{s}" if s else ""
+
+
 def _tail_jsonl(path: str, limit: int) -> list[dict]:
     """Read the last ``limit`` JSON objects from a .jsonl file (best-effort)."""
     if not path or not os.path.exists(path):
@@ -87,6 +93,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
     def settled_dict(p):
         return {
             "title": p.title,
+            "url": _market_url(p.event_slug, p.slug),
             "outcome": p.outcome,
             "signal": p.signal_kind,
             "entry_price": round(p.entry_price, 3),
@@ -113,6 +120,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
         open_rows.append(
             {
                 "title": p.title,
+                "url": _market_url(p.event_slug, p.slug),
                 "outcome": p.outcome,
                 "signal": p.signal_kind,
                 "entry_price": round(p.entry_price, 3),
@@ -306,7 +314,10 @@ PAGE = r"""<!doctype html>
   tbody tr:last-child td{ border-bottom:none; }
   tbody tr:hover td{ background:rgba(255,255,255,.02); }
   td.num, th.num{ text-align:right; font-variant-numeric:tabular-nums; }
-  .mkt{ max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mkt{ max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mktlink{ color:var(--txt); text-decoration:underline; text-decoration-color:var(--line2);
+            text-underline-offset:3px; transition:.15s; }
+  .mktlink:hover{ color:var(--accent); text-decoration-color:var(--accent); }
   .pill{ padding:3px 9px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
   .pill.high{ background:var(--red-bg); color:var(--red); }
   .pill.medium{ background:#352a10; color:var(--amber); }
@@ -364,6 +375,12 @@ function money(n){ if(n==null) return '—';
 function pct(n){ return (n>=0?'+':'') + (n*100).toFixed(1) + '%'; }
 function signClass(n){ return n > 0 ? 'pos' : (n < 0 ? 'neg' : ''); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function pmUrl(o){ return o.url || ((o.event_slug||o.slug) ? ('https://polymarket.com/event/'+(o.event_slug||o.slug)) : ''); }
+function mktCell(title, url){
+  const t = esc(title);
+  return url ? `<a class="mktlink" href="${esc(url)}" target="_blank" rel="noopener" title="${t} — open on Polymarket">${t} ↗</a>`
+             : t;
+}
 function card(label, value, cls, accent, hint){
   return `<div class="card ${accent||''}"><div class="label">${label}</div>
     <div class="value ${cls||''}">${value}</div>${hint?`<div class="hint">${hint}</div>`:''}</div>`;
@@ -412,7 +429,7 @@ function render(d){
      <th class="num">Cost</th><th class="num">Value</th><th class="num">P&L</th><th>Status</th>`,
     op.map(p=>{
       const u=p.unrealized_pnl, st=u==null?'':(u>=0?'up':'down'), lbl=u==null?'no price':(u>=0?'▲ up':'▼ down');
-      return `<tr><td class="mkt" title="${esc(p.title)}">${esc(p.title)}</td><td>${esc(p.outcome)}</td>
+      return `<tr><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
         <td class="num">${p.entry_price}</td><td class="num">${p.current_price==null?'—':p.current_price}</td>
         <td class="num">${money(p.cost_usd)}</td><td class="num">${money(p.current_value)}</td>
         <td class="num ${signClass(u)}">${money(u)}</td>
@@ -427,7 +444,7 @@ function render(d){
     `<th>Time (UTC)</th><th>Type</th><th class="mkt">Market</th><th>Pick</th><th class="num">Size</th>`,
     al.map(a=>`<tr><td style="color:var(--muted)">${esc((a.iso||'').replace('T',' ').replace('Z',''))}</td>
       <td><span class="pill ${esc(a.severity||'low')}">${esc(a.kind||'')}</span></td>
-      <td class="mkt" title="${esc(a.title)}">${esc(a.title)}</td><td>${esc(a.outcome)}</td>
+      <td class="mkt">${mktCell(a.title, pmUrl(a))}</td><td>${esc(a.outcome)}</td>
       <td class="num">${money(a.notional_usd||0)}</td></tr>`).join(''),
     'No alerts logged yet.');
 
@@ -436,7 +453,7 @@ function render(d){
   document.getElementById('c-st').textContent = stl.length ? stl.length : '';
   document.getElementById('settledBody').innerHTML = wrapTable(
     `<th class="mkt">Market</th><th>Pick</th><th>Result</th><th class="num">P&L</th>`,
-    stl.map(p=>`<tr><td class="mkt" title="${esc(p.title)}">${esc(p.title)}</td><td>${esc(p.outcome)}</td>
+    stl.map(p=>`<tr><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
       <td><span class="pill ${esc(p.status)}">${esc(p.status)}</span></td>
       <td class="num ${signClass(p.pnl)}">${money(p.pnl)}</td></tr>`).join(''),
     'Nothing settled yet — markets need to resolve first.');
