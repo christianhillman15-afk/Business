@@ -17,20 +17,24 @@ filters:
   sides: [BUY]              # which sides are "suspicious" (BUY = buying pressure)
 
 detection:
-  large_trade_usd: 5000     # flag any single buy at/above this USDC notional
+  # ── "More sensitive" preset ──
+  # Lower numbers = more alerts / faster win-rate data (and more noise).
+  # For higher-conviction-only alerts, raise these (e.g. large_trade_usd: 5000,
+  # accumulation.min_total_usd: 10000, coordinated.min_wallets: 4).
+  large_trade_usd: 1000     # flag any single buy at/above this USDC notional
   min_price: 0.0            # ignore aggressive buys below this price (0 = off)
 
   accumulation:             # one wallet quietly building a position
     enabled: true
     window_minutes: 30
-    min_total_usd: 10000
-    min_trades: 3
+    min_total_usd: 3000
+    min_trades: 2
 
   coordinated:              # many wallets piling into the same outcome fast
     enabled: true
     window_minutes: 10
-    min_wallets: 4
-    min_total_usd: 15000
+    min_wallets: 3
+    min_total_usd: 5000
 
   watchlist:                # always alert on these wallets (known whales)
     wallets: []             # e.g. ["0xabc...", "0xdef..."]
