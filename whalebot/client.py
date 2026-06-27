@@ -77,6 +77,26 @@ class PolymarketClient:
                 log.debug("skipping malformed trade record: %s", exc)
         return trades
 
+    def fetch_midpoint(self, token_id: str) -> float | None:
+        """Current mid-market price (0..1) for an outcome token, or None.
+
+        Used to mark open paper positions to market. Returns None if the token
+        has no live order book (e.g. the market has closed).
+        """
+        if not token_id:
+            return None
+        try:
+            raw = self._get(f"{self.clob_api}/midpoint", params={"token_id": token_id})
+        except Exception as exc:  # noqa: BLE001
+            log.debug("fetch_midpoint failed for %s: %s", token_id, exc)
+            return None
+        if isinstance(raw, dict) and "mid" in raw:
+            try:
+                return float(raw["mid"])
+            except (TypeError, ValueError):
+                return None
+        return None
+
     def fetch_market(
         self, condition_id: str, include_closed: bool = True
     ) -> dict[str, Any] | None:
