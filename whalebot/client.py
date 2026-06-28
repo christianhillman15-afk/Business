@@ -97,6 +97,27 @@ class PolymarketClient:
                 return None
         return None
 
+    def fetch_price_history(
+        self, token_id: str, interval: str = "1d", fidelity: int = 60
+    ) -> list[dict]:
+        """Price history for an outcome token: list of {"t": unix, "p": price}.
+
+        ``interval`` is one of 1h/6h/1d/1w/max; ``fidelity`` is the bucket size
+        in minutes. Returns [] on any error so the dashboard degrades gracefully.
+        """
+        if not token_id:
+            return []
+        try:
+            raw = self._get(
+                f"{self.clob_api}/prices-history",
+                params={"market": token_id, "interval": interval, "fidelity": fidelity},
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("fetch_price_history failed for %s: %s", token_id, exc)
+            return []
+        hist = raw.get("history") if isinstance(raw, dict) else None
+        return hist if isinstance(hist, list) else []
+
     def fetch_market(
         self, condition_id: str, include_closed: bool = True
     ) -> dict[str, Any] | None:

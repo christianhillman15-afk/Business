@@ -154,6 +154,9 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
     open_pos = [p for p in positions if p.status == "open"]
     closed_pos = [p for p in positions if p.status in ("won", "lost")]
 
+    def _iso(ts):
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts)) if ts else ""
+
     def settled_dict(p):
         return {
             "title": p.title,
@@ -165,6 +168,11 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
             "cost_usd": round(p.cost_usd, 2),
             "status": p.status,
             "pnl": round(p.pnl, 2),
+            "asset": p.asset,
+            "opened_ts": p.opened_ts,
+            "opened_iso": _iso(p.opened_ts),
+            "settled_iso": _iso(p.settled_ts),
+            "wallets": list(getattr(p, "wallets", []) or []),
         }
 
     open_rows = []
@@ -193,6 +201,10 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
                 "cost_usd": round(p.cost_usd, 2),
                 "current_value": round(cur_value, 2) if cur_value is not None else None,
                 "unrealized_pnl": round(unreal, 2) if unreal is not None else None,
+                "asset": p.asset,
+                "opened_ts": p.opened_ts,
+                "opened_iso": _iso(p.opened_ts),
+                "wallets": list(getattr(p, "wallets", []) or []),
             }
         )
 
@@ -238,6 +250,12 @@ def _make_handler(cfg: Config):
 
             if parsed.path == "/api/data":
                 self._send_json(build_snapshot(cfg, client))
+            elif parsed.path == "/api/history":
+                tok = query.get("m", [""])[0]
+                iv = query.get("iv", ["1d"])[0]
+                if iv not in ("1h", "6h", "1d", "1w", "max"):
+                    iv = "1d"
+                self._send_json({"history": client.fetch_price_history(tok, interval=iv)})
             elif parsed.path in ("/", "/index.html"):
                 self._send_html(PAGE)
             else:
@@ -394,6 +412,44 @@ PAGE = r"""<!doctype html>
   .pill.lost,.pill.down{ background:var(--red-bg); color:var(--red); }
   .empty{ color:var(--dim); padding:34px 16px; text-align:center; font-style:italic; }
   footer{ text-align:center; color:var(--dim); font-size:12px; padding:28px 16px 8px; }
+  tr.clickrow{ cursor:pointer; }
+  tr.clickrow:hover td{ background:rgba(94,234,212,.06); }
+
+  /* modal */
+  .overlay{ position:fixed; inset:0; background:rgba(3,6,12,.7); backdrop-filter:blur(3px);
+            display:none; align-items:flex-start; justify-content:center; z-index:50; padding:28px 14px; overflow:auto; }
+  .overlay.show{ display:flex; }
+  .modal{ width:100%; max-width:720px; background:var(--panel); border:1px solid var(--line2);
+          border-radius:18px; box-shadow:var(--shadow); overflow:hidden; animation:fade .2s ease; }
+  .modal .mhead{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+                 padding:18px 20px; border-bottom:1px solid var(--line); }
+  .modal .mhead h3{ margin:0; font-size:17px; }
+  .modal .mhead .msub{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+  .xbtn{ background:var(--panel2); border:1px solid var(--line2); color:var(--muted); border-radius:9px;
+         width:32px; height:32px; font-size:16px; cursor:pointer; flex:none; }
+  .xbtn:hover{ color:var(--txt); }
+  .mbody{ padding:18px 20px 22px; }
+  .mgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:8px; }
+  .mstat{ background:var(--bg2); border:1px solid var(--line); border-radius:11px; padding:11px 12px; }
+  .mstat .l{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .mstat .v{ font-size:18px; font-weight:700; margin-top:3px; }
+  .ivbar{ display:flex; gap:6px; margin:18px 0 8px; }
+  .ivbtn{ font-size:12px; font-weight:600; color:var(--muted); background:var(--panel2);
+          border:1px solid var(--line); border-radius:8px; padding:5px 11px; cursor:pointer; }
+  .ivbtn.active{ color:#04110d; background:var(--accent); border-color:transparent; }
+  .chartwrap{ position:relative; }
+  .chartwrap svg{ width:100%; height:auto; display:block; }
+  .ctip{ position:absolute; pointer-events:none; background:#0a1424; border:1px solid var(--line2);
+         border-radius:8px; padding:6px 9px; font-size:12px; color:var(--txt); white-space:nowrap;
+         transform:translate(-50%,-130%); display:none; z-index:2; }
+  .msec{ font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;
+         font-weight:700; margin:20px 0 10px; }
+  .wallets{ display:flex; flex-direction:column; gap:8px; }
+  .wallet{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+           background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
+  .wallet code{ font-size:12.5px; color:var(--blue); }
+  .wallet a{ font-size:12px; color:var(--accent); text-decoration:none; font-weight:600; white-space:nowrap; }
+  .wallet a:hover{ text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -441,6 +497,31 @@ PAGE = r"""<!doctype html>
   <div class="panel" id="alerts"><div class="tablecard" id="alertsBody"></div></div>
   <div class="panel" id="settled"><div class="tablecard" id="settledBody"></div></div>
 </div>
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <div class="mhead">
+      <div>
+        <h3 id="dTitle">—</h3>
+        <div class="msub" id="dSub"></div>
+      </div>
+      <button class="xbtn" id="dClose">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="mgrid" id="dStats"></div>
+      <div class="msec">Live price (Polymarket)</div>
+      <div class="ivbar" id="dIv">
+        <button class="ivbtn" data-iv="6h">6h</button>
+        <button class="ivbtn active" data-iv="1d">1D</button>
+        <button class="ivbtn" data-iv="1w">1W</button>
+        <button class="ivbtn" data-iv="max">All</button>
+      </div>
+      <div class="chartwrap" id="dChart"><div class="empty">Loading chart…</div></div>
+      <div class="msec">Whale wallet(s) that triggered this flag</div>
+      <div class="wallets" id="dWallets"></div>
+    </div>
+  </div>
+</div>
+
 <footer>Auto-refreshing · paper trading (fake money) · powered by your Polymarket whale bot</footer>
 
 <script>
@@ -476,6 +557,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
 });
 
 function render(d){
+  window.DATA = d;  // so the detail-modal click handler can look up positions
   const s = d.stats;
   const totalPnl = s.live_equity - s.starting_balance;
 
@@ -530,9 +612,9 @@ function render(d){
   document.getElementById('open').innerHTML = wrapTable(
     `<th class="mkt">Market</th><th>Pick</th><th class="num">Entry</th><th class="num">Now</th>
      <th class="num">Cost</th><th class="num">Value</th><th class="num">P&L</th><th>Status</th>`,
-    op.map(p=>{
+    op.map((p,i)=>{
       const u=p.unrealized_pnl, st=u==null?'':(u>=0?'up':'down'), lbl=u==null?'no price':(u>=0?'▲ up':'▼ down');
-      return `<tr><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
+      return `<tr class="clickrow" data-k="open" data-i="${i}"><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
         <td class="num">${p.entry_price}</td><td class="num">${p.current_price==null?'—':p.current_price}</td>
         <td class="num">${money(p.cost_usd)}</td><td class="num">${money(p.current_value)}</td>
         <td class="num ${signClass(u)}">${money(u)}</td>
@@ -556,13 +638,139 @@ function render(d){
   document.getElementById('c-st').textContent = stl.length ? stl.length : '';
   document.getElementById('settledBody').innerHTML = wrapTable(
     `<th class="mkt">Market</th><th>Pick</th><th>Result</th><th class="num">P&L</th>`,
-    stl.map(p=>`<tr><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
+    stl.map((p,i)=>`<tr class="clickrow" data-k="settled" data-i="${i}"><td class="mkt">${mktCell(p.title, pmUrl(p))}</td><td>${esc(p.outcome)}</td>
       <td><span class="pill ${esc(p.status)}">${esc(p.status)}</span></td>
       <td class="num ${signClass(p.pnl)}">${money(p.pnl)}</td></tr>`).join(''),
     'Nothing settled yet — markets need to resolve first.');
 
   document.getElementById('dot').classList.remove('off');
   document.getElementById('updated').textContent = 'live · updated ' + new Date().toLocaleTimeString();
+}
+
+// ---------- position detail modal ----------
+let CURRENT = null;  // the position being shown
+
+document.addEventListener('click', e=>{
+  const row = e.target.closest('tr.clickrow');
+  if(row && !e.target.closest('a')){  // ignore clicks on the market link itself
+    const arr = row.dataset.k==='open' ? (window.DATA?.open_positions) : (window.DATA?.settled_positions);
+    const p = arr && arr[+row.dataset.i];
+    if(p) openDetail(p);
+  }
+});
+document.getElementById('dClose').addEventListener('click', closeDetail);
+document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeDetail(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeDetail(); });
+document.getElementById('dIv').addEventListener('click', e=>{
+  const b=e.target.closest('.ivbtn'); if(!b||!CURRENT) return;
+  document.querySelectorAll('#dIv .ivbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  loadChart(CURRENT.asset, b.dataset.iv);
+});
+
+function openDetail(p){
+  CURRENT = p;
+  const url = pmUrl(p);
+  document.getElementById('dTitle').innerHTML = mktCell(p.title, url);
+  document.getElementById('dSub').textContent =
+    (p.signal? p.signal.replace('_',' ')+' signal · ' : '') + 'pick: ' + (p.outcome||'');
+
+  const u = (p.unrealized_pnl!=null) ? p.unrealized_pnl : p.pnl;
+  const rows = [
+    ['Bought', p.opened_iso||'—'],
+    ['Entry price', p.entry_price],
+    ['Price now', p.current_price!=null?p.current_price:'—'],
+    ['Cost', money(p.cost_usd)],
+    ['Value now', p.current_value!=null?money(p.current_value):'—'],
+    ['P&L', money(u)],
+  ];
+  if(p.status && p.status!=='open') rows.push(['Result', p.status.toUpperCase()]);
+  if(p.settled_iso) rows.push(['Settled', p.settled_iso]);
+  document.getElementById('dStats').innerHTML = rows.map(([l,v])=>{
+    const cls = (l==='P&L')? signClass(u) : '';
+    return `<div class="mstat"><div class="l">${l}</div><div class="v ${cls}">${v}</div></div>`;
+  }).join('');
+
+  // wallets with profile links
+  const ws = p.wallets||[];
+  document.getElementById('dWallets').innerHTML = ws.length ? ws.map(w=>
+    `<div class="wallet"><code>${esc(w)}</code>
+      <a href="https://polymarket.com/profile/${esc(w)}" target="_blank" rel="noopener">view trader ↗</a></div>`
+  ).join('') : '<div class="empty">Wallet info wasn\'t recorded for this older position.</div>';
+
+  document.getElementById('overlay').classList.add('show');
+  // reset interval to 1D and load
+  document.querySelectorAll('#dIv .ivbtn').forEach(x=>x.classList.toggle('active', x.dataset.iv==='1d'));
+  loadChart(p.asset, '1d');
+}
+function closeDetail(){ document.getElementById('overlay').classList.remove('show'); CURRENT=null; }
+
+async function loadChart(asset, iv){
+  const box = document.getElementById('dChart');
+  box.innerHTML = '<div class="empty">Loading chart…</div>';
+  if(!asset){ box.innerHTML='<div class="empty">No market data for this position.</div>'; return; }
+  try{
+    const u = '/api/history?m='+encodeURIComponent(asset)+'&iv='+iv+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
+    const r = await fetch(u, {cache:'no-store'});
+    const pts = (await r.json()).history||[];
+    drawChart(box, pts);
+  }catch(e){ box.innerHTML='<div class="empty">Couldn\'t load chart.</div>'; }
+}
+
+function drawChart(box, pts){
+  if(!pts.length){ box.innerHTML='<div class="empty">No price history yet.</div>'; return; }
+  const W=680,H=240,pl=42,pr=14,pt=12,pb=26;
+  const xs=pts.map(d=>d.t), ys=pts.map(d=>d.p);
+  const tmin=Math.min(...xs), tmax=Math.max(...xs);
+  let lo=Math.min(...ys), hi=Math.max(...ys); const pad=Math.max(0.02,(hi-lo)*0.15);
+  lo=Math.max(0,lo-pad); hi=Math.min(1,hi+pad);
+  const X=t=> pl+(W-pl-pr)*((t-tmin)/((tmax-tmin)||1));
+  const Y=p=> pt+(H-pt-pb)*(1-((p-lo)/((hi-lo)||1)));
+  const line=pts.map((d,i)=>(i?'L':'M')+X(d.t).toFixed(1)+' '+Y(d.p).toFixed(1)).join(' ');
+  const area=line+` L ${X(tmax).toFixed(1)} ${H-pb} L ${X(tmin).toFixed(1)} ${H-pb} Z`;
+  const up = ys[ys.length-1] >= ys[0];
+  const col = up ? '#34d399' : '#f87171';
+  // y gridlines
+  let grid='';
+  for(let k=0;k<=2;k++){ const val=lo+(hi-lo)*k/2; const y=Y(val);
+    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#1e2a44"/>
+           <text x="6" y="${y+4}" fill="#5d6e92" font-size="11">${val.toFixed(2)}</text>`; }
+  // bought marker (vertical dashed line) if in range
+  let mark='';
+  if(CURRENT && CURRENT.opened_ts && CURRENT.opened_ts>=tmin && CURRENT.opened_ts<=tmax){
+    const mx=X(CURRENT.opened_ts);
+    mark=`<line x1="${mx}" y1="${pt}" x2="${mx}" y2="${H-pb}" stroke="#fbbf24" stroke-dasharray="4 3"/>
+          <text x="${mx+4}" y="${pt+12}" fill="#fbbf24" font-size="10">bought</text>`;
+  }
+  box.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" id="csvg">
+      <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+        <stop offset="0" stop-color="${col}" stop-opacity="0.28"/>
+        <stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+      ${grid}
+      <path d="${area}" fill="url(#g)"/>
+      <path d="${line}" fill="none" stroke="${col}" stroke-width="2"/>
+      ${mark}
+      <line id="cx" x1="0" y1="${pt}" x2="0" y2="${H-pb}" stroke="#8b9bbd" stroke-dasharray="3 3" style="display:none"/>
+      <circle id="cdot" r="3.5" fill="${col}" style="display:none"/>
+      <rect x="${pl}" y="${pt}" width="${W-pl-pr}" height="${H-pt-pb}" fill="transparent" id="cover"/>
+    </svg>
+    <div class="ctip" id="ctip"></div>`;
+  const svg=box.querySelector('#csvg'), cover=box.querySelector('#cover');
+  const cx=box.querySelector('#cx'), cdot=box.querySelector('#cdot'), tip=box.querySelector('#ctip');
+  cover.addEventListener('mousemove', ev=>{
+    const r=svg.getBoundingClientRect(); const sx=(ev.clientX-r.left)*(W/r.width);
+    const tt=tmin+(tmax-tmin)*((sx-pl)/((W-pl-pr)||1));
+    let bi=0,bd=1e18; for(let i=0;i<pts.length;i++){const dd=Math.abs(pts[i].t-tt); if(dd<bd){bd=dd;bi=i;}}
+    const d=pts[bi], px=X(d.t), py=Y(d.p);
+    cx.setAttribute('x1',px); cx.setAttribute('x2',px); cx.style.display='';
+    cdot.setAttribute('cx',px); cdot.setAttribute('cy',py); cdot.style.display='';
+    const dt=new Date(d.t*1000);
+    tip.style.display='block';
+    tip.style.left=(px/W*r.width)+'px'; tip.style.top=(py/H*r.height)+'px';
+    tip.innerHTML=`<b>${d.p.toFixed(3)}</b><br>${dt.toLocaleString()}`;
+  });
+  cover.addEventListener('mouseleave', ()=>{ cx.style.display='none'; cdot.style.display='none'; tip.style.display='none'; });
 }
 
 async function tick(){

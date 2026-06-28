@@ -44,6 +44,7 @@ class PaperPosition:
     payout_usd: float = 0.0
     slug: str = ""  # market slug, for linking to polymarket.com
     event_slug: str = ""
+    wallets: list = field(default_factory=list)  # whale wallet(s) that triggered it
 
     @property
     def pnl(self) -> float:
@@ -112,6 +113,9 @@ class PaperPortfolio:
             existing.shares = total_shares
             existing.cost_usd = total_cost
             existing.entry_price = total_cost / total_shares
+            for w in sig.wallets:  # capture additional whales, keep unique, cap 12
+                if w not in existing.wallets and len(existing.wallets) < 12:
+                    existing.wallets.append(w)
             self._append_ledger("add", existing, stake, now)
             return existing
 
@@ -128,6 +132,7 @@ class PaperPortfolio:
             opened_ts=now,
             slug=sig.slug,
             event_slug=sig.event_slug,
+            wallets=list(sig.wallets[:12]),
         )
         self.positions[pid] = pos
         self._append_ledger("open", pos, stake, now)
