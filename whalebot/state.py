@@ -25,6 +25,8 @@ class State:
         self.follow_spend: dict[str, float] = {}
         # opaque blob owned by the paper portfolio
         self.paper: dict[str, Any] = {}
+        # wallet (lowercased) -> aggregated "suspect" stats we've observed
+        self.suspects: dict[str, dict] = {}
         self.last_settle_ts: float = 0.0
         self._load()
 
@@ -38,6 +40,7 @@ class State:
             self.seen = {k: float(v) for k, v in data.get("seen", {}).items()}
             self.follow_spend = {k: float(v) for k, v in data.get("follow_spend", {}).items()}
             self.paper = data.get("paper", {}) or {}
+            self.suspects = data.get("suspects", {}) or {}
             self.last_settle_ts = float(data.get("last_settle_ts", 0.0))
         except Exception as exc:  # noqa: BLE001
             log.warning("could not load state from %s (%s); starting fresh", self.path, exc)
@@ -48,6 +51,7 @@ class State:
             "seen": self.seen,
             "follow_spend": self.follow_spend,
             "paper": self.paper,
+            "suspects": self.suspects,
             "last_settle_ts": self.last_settle_ts,
         }
         try:
@@ -72,6 +76,22 @@ class State:
         for k in stale:
             del self.seen[k]
         return len(stale)
+
+    # -- suspects (flagged wallets) ----------------------------------------
+    def record_suspect(self, wallet: str, condition_id: str, usd: float, ts: float) -> None:
+        """Accumulate observed stats for a flagged wallet (call once per trade)."""
+        if not wallet:
+            return
+        rec = self.suspects.get(wallet)
+        if rec is None:
+            rec = {"flags": 0, "usd": 0.0, "markets": [], "first_ts": ts, "last_ts": ts}
+            self.suspects[wallet] = rec
+        rec["flags"] += 1
+        rec["usd"] = round(rec.get("usd", 0.0) + usd, 2)
+        if condition_id and condition_id not in rec["markets"] and len(rec["markets"]) < 100:
+            rec["markets"].append(condition_id)
+        rec["first_ts"] = min(rec.get("first_ts", ts), ts)
+        rec["last_ts"] = max(rec.get("last_ts", ts), ts)
 
     # -- follow spend cap --------------------------------------------------
     def follow_spent_today(self, day: str) -> float:

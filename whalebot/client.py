@@ -97,6 +97,50 @@ class PolymarketClient:
                 return None
         return None
 
+    def fetch_user_value(self, addr: str) -> float | None:
+        """Current Polymarket portfolio value (USDC) for a wallet."""
+        try:
+            raw = self._get(f"{self.data_api}/value", params={"user": addr})
+        except Exception:  # noqa: BLE001
+            return None
+        if isinstance(raw, list) and raw:
+            try:
+                return float(raw[0].get("value"))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def fetch_user_profit(self, addr: str, window: str = "all") -> tuple[float | None, str]:
+        """PnL for a wallet over a window (1d/7d/30d/all) via the leaderboard API.
+
+        Returns (amount, pseudonym). pseudonym often ends in '-<ms>' which marks
+        when the wallet first appeared on Polymarket.
+        """
+        url = "https://lb-api.polymarket.com/profit"
+        try:
+            resp = self.session.get(
+                url, params={"window": window, "address": addr}, timeout=self.timeout
+            )
+            raw = resp.json()
+        except Exception:  # noqa: BLE001
+            return None, ""
+        if isinstance(raw, list) and raw:
+            try:
+                return float(raw[0].get("amount")), str(raw[0].get("pseudonym", ""))
+            except (TypeError, ValueError):
+                return None, ""
+        return None, ""
+
+    def fetch_user_positions(self, addr: str, limit: int = 500) -> list[dict]:
+        """A wallet's positions (incl. resolved/redeemable) for win-rate stats."""
+        try:
+            raw = self._get(
+                f"{self.data_api}/positions", params={"user": addr, "limit": limit}
+            )
+        except Exception:  # noqa: BLE001
+            return []
+        return raw if isinstance(raw, list) else []
+
     def fetch_price_history(
         self, token_id: str, interval: str = "1d", fidelity: int = 60
     ) -> list[dict]:

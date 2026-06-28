@@ -99,6 +99,17 @@ class WhaleBot:
         for sig in signals:
             self._handle_signal(sig)
 
+        # Record flagged wallets ("suspects") — attribute each NEW trade once,
+        # even if it appears in several signals this tick.
+        new_keys = {t.dedup_key for t in new}
+        attributed: dict[str, object] = {}
+        for sig in signals:
+            for tr in sig.trades:
+                if tr.dedup_key in new_keys:
+                    attributed[tr.dedup_key] = tr
+        for tr in attributed.values():
+            self.state.record_suspect(tr.wallet, tr.condition_id, tr.notional, tr.timestamp)
+
         self._maybe_settle()
 
         # persist + housekeeping

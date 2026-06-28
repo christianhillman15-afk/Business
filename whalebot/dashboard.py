@@ -105,6 +105,129 @@ def _history_stats(settled, starting: float, now: float) -> dict:
     }
 
 
+_ADJ = [
+    "Sneaky", "Reckless", "Greedy", "Lucky", "Degenerate", "Mysterious", "Caffeinated",
+    "Feral", "Smug", "Paranoid", "Diamond-Handed", "Galaxy-Brain", "Sweaty", "Unhinged",
+    "Mild-Mannered", "Suspicious", "Chonky", "Nocturnal", "Turbo", "Anonymous", "Brave",
+    "Cold-Blooded", "Jittery", "Shadowy", "Fearless", "Reckless", "Hyperactive", "Zen",
+]
+_NOUN = [
+    "Otter", "Walrus", "Goblin", "Whale", "Raccoon", "Llama", "Pigeon", "Badger",
+    "Hamster", "Narwhal", "Possum", "Ferret", "Gecko", "Mongoose", "Capybara",
+    "Platypus", "Squid", "Yak", "Moose", "Newt", "Penguin", "Wombat", "Lemur", "Sloth",
+]
+_TITLES = [
+    "the Bold", "the Unlucky", "the Wise", "Jr.", "Sr.", "III", "the Great",
+    "the Mysterious", "the Degenerate", "Esq.", "the Lucky", "the Menace",
+]
+
+
+def _funny_name(wallet: str) -> str:
+    """Deterministic, stable funny nickname derived from a wallet address."""
+    try:
+        h = int(wallet, 16)
+    except (TypeError, ValueError):
+        h = sum(ord(c) for c in (wallet or "x"))
+    adj = _ADJ[h % len(_ADJ)]
+    noun = _NOUN[(h // 7) % len(_NOUN)]
+    title = _TITLES[(h // 53) % len(_TITLES)]
+    return f"{adj} {noun} {title}"
+
+
+# Per-wallet enrichment cache: addr -> (data, fetched_at)
+_suspect_cache: dict[str, tuple[dict, float]] = {}
+_SUSPECT_TTL = 1800.0
+
+
+def enrich_suspect(client: PolymarketClient, wallet: str) -> dict:
+    """Pull live Polymarket stats for a wallet (cached). Best-effort; any field
+    may be None if Polymarket doesn't return it."""
+    now = time.time()
+    hit = _suspect_cache.get(wallet)
+    if hit and (now - hit[1]) < _SUSPECT_TTL:
+        return hit[0]
+
+    value = client.fetch_user_value(wallet)
+    pnl_all, pseudonym = client.fetch_user_profit(wallet, "all")
+    pnl_1d, _ = client.fetch_user_profit(wallet, "1d")
+    pnl_7d, _ = client.fetch_user_profit(wallet, "7d")
+    pnl_30d, _ = client.fetch_user_profit(wallet, "30d")
+    positions = client.fetch_user_positions(wallet, limit=500)
+
+    # win rate from resolved positions (curPrice at 0/1, or redeemable)
+    wins = losses = 0
+    volume = 0.0
+    for p in positions:
+        try:
+            volume += float(p.get("initialValue", 0) or 0)
+            cur = float(p.get("curPrice", -1))
+            resolved = p.get("redeemable") or cur in (0.0, 1.0)
+            if resolved:
+                rp = float(p.get("realizedPnl", 0) or 0)
+                if rp > 0:
+                    wins += 1
+                elif rp < 0:
+                    losses += 1
+        except (TypeError, ValueError):
+            continue
+    settled = wins + losses
+    win_rate = (wins / settled) if settled else None
+
+    # account age from pseudonym '-<ms>' suffix
+    age_days = None
+    first_seen = ""
+    if pseudonym and "-" in pseudonym:
+        tail = pseudonym.rsplit("-", 1)[-1]
+        if tail.isdigit():
+            try:
+                first_ms = int(tail)
+                age_days = max(0.0, (now - first_ms / 1000.0) / 86400.0)
+                first_seen = time.strftime("%Y-%m-%d", time.gmtime(first_ms / 1000.0))
+            except (ValueError, OverflowError):
+                pass
+
+    data = {
+        "wallet": wallet,
+        "value": round(value, 2) if value is not None else None,
+        "pnl_all": round(pnl_all, 2) if pnl_all is not None else None,
+        "pnl_1d": round(pnl_1d, 2) if pnl_1d is not None else None,
+        "pnl_7d": round(pnl_7d, 2) if pnl_7d is not None else None,
+        "pnl_30d": round(pnl_30d, 2) if pnl_30d is not None else None,
+        "win_rate": round(win_rate, 4) if win_rate is not None else None,
+        "wins": wins,
+        "losses": losses,
+        "volume": round(volume, 2),
+        "markets_traded": len(positions),
+        "age_days": round(age_days, 1) if age_days is not None else None,
+        "first_seen": first_seen,
+    }
+    _suspect_cache[wallet] = (data, now)
+    return data
+
+
+def build_suspects(state) -> list[dict]:
+    """The tracked suspect list from our own observations (no external calls)."""
+    out = []
+    for wallet, rec in state.suspects.items():
+        out.append(
+            {
+                "wallet": wallet,
+                "name": _funny_name(wallet),
+                "flags": rec.get("flags", 0),
+                "flagged_usd": round(rec.get("usd", 0.0), 2),
+                "markets": len(rec.get("markets", [])),
+                "first_ts": rec.get("first_ts", 0),
+                "first_iso": time.strftime(
+                    "%Y-%m-%d", time.gmtime(rec.get("first_ts", 0))
+                )
+                if rec.get("first_ts")
+                else "",
+            }
+        )
+    out.sort(key=lambda s: s["flagged_usd"], reverse=True)
+    return out
+
+
 def _market_url(event_slug: str, slug: str) -> str:
     """Build a polymarket.com link from a market's slug (best-effort)."""
     s = (event_slug or slug or "").strip()
@@ -256,6 +379,12 @@ def _make_handler(cfg: Config):
                 if iv not in ("1h", "6h", "1d", "1w", "max"):
                     iv = "1d"
                 self._send_json({"history": client.fetch_price_history(tok, interval=iv)})
+            elif parsed.path == "/api/suspects":
+                state = State(cfg.state.path, cfg.state.dedup_ttl_minutes)
+                self._send_json({"suspects": build_suspects(state)})
+            elif parsed.path == "/api/suspect":
+                w = query.get("w", [""])[0].lower()
+                self._send_json(enrich_suspect(client, w) if w else {})
             elif parsed.path in ("/", "/index.html"):
                 self._send_html(PAGE)
             else:
@@ -450,6 +579,25 @@ PAGE = r"""<!doctype html>
   .wallet code{ font-size:12.5px; color:var(--blue); }
   .wallet a{ font-size:12px; color:var(--accent); text-decoration:none; font-weight:600; white-space:nowrap; }
   .wallet a:hover{ text-decoration:underline; }
+  .wrapbar{ flex-wrap:wrap; }
+  /* suspect cards */
+  .suspects-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; }
+  .suspect{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:15px 16px;
+            cursor:pointer; transition:.16s; position:relative; overflow:hidden; }
+  .suspect:hover{ transform:translateY(-2px); border-color:var(--accent); box-shadow:var(--shadow); }
+  .suspect .av{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center; font-size:18px;
+                background:linear-gradient(135deg,#1f3a5f,#0e2e22); margin-bottom:10px; }
+  .suspect .nm{ font-weight:700; font-size:15px; }
+  .suspect .ad{ font-size:11px; color:var(--dim); margin-top:2px; font-family:ui-monospace,monospace; }
+  .suspect .row{ display:flex; justify-content:space-between; font-size:12.5px; margin-top:9px; color:var(--muted); }
+  .suspect .row b{ color:var(--txt); font-weight:600; }
+  .suspect .hl{ position:absolute; top:12px; right:14px; font-size:13px; font-weight:800; }
+  .sdesc{ background:var(--bg2); border:1px solid var(--line); border-radius:11px; padding:13px 15px;
+          font-size:13.5px; line-height:1.5; color:var(--txt); margin-bottom:14px; }
+  .bigbtn{ display:block; text-align:center; margin-top:18px; padding:11px; border-radius:11px;
+           background:linear-gradient(135deg,#5eead4,#34d399); color:#04110d; font-weight:700;
+           text-decoration:none; }
+  .bigbtn:hover{ filter:brightness(1.05); }
 </style>
 </head>
 <body>
@@ -480,6 +628,7 @@ PAGE = r"""<!doctype html>
     <button class="tab active" data-tab="overview">Overview</button>
     <button class="tab" data-tab="positions">Current Positions<span class="count" id="c-pos"></span></button>
     <button class="tab" data-tab="history">Account History</button>
+    <button class="tab" data-tab="suspects">Suspects<span class="count" id="c-sus"></span></button>
     <button class="tab" data-tab="alerts">Alerts<span class="count" id="c-al"></span></button>
     <button class="tab" data-tab="settled">Settled<span class="count" id="c-st"></span></button>
   </div>
@@ -493,6 +642,17 @@ PAGE = r"""<!doctype html>
     <div class="cards" id="histTime"></div>
     <div class="section-title">Trade stats</div>
     <div class="cards" id="histStats"></div>
+  </div>
+  <div class="panel" id="suspects">
+    <div class="ivbar wrapbar" id="suspectCats">
+      <button class="ivbtn active" data-cat="biggest">💵 Biggest Buyer</button>
+      <button class="ivbtn" data-cat="heavy">🔁 Heavy Buyer</button>
+      <button class="ivbtn" data-cat="active">⚡ Most Active</button>
+      <button class="ivbtn" data-cat="richest">💰 Richest</button>
+      <button class="ivbtn" data-cat="profit">📈 Most Profitable</button>
+      <button class="ivbtn" data-cat="winrate">🎯 Highest Win Rate</button>
+    </div>
+    <div id="suspectsList"><div class="empty">Open this tab to load suspects…</div></div>
   </div>
   <div class="panel" id="alerts"><div class="tablecard" id="alertsBody"></div></div>
   <div class="panel" id="settled"><div class="tablecard" id="settledBody"></div></div>
@@ -518,6 +678,27 @@ PAGE = r"""<!doctype html>
       <div class="chartwrap" id="dChart"><div class="empty">Loading chart…</div></div>
       <div class="msec">Whale wallet(s) that triggered this flag</div>
       <div class="wallets" id="dWallets"></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="soverlay">
+  <div class="modal" id="smodal">
+    <div class="mhead">
+      <div>
+        <h3 id="sTitle">—</h3>
+        <div class="msub" id="sSub"></div>
+      </div>
+      <button class="xbtn" id="sClose">✕</button>
+    </div>
+    <div class="mbody">
+      <div id="sDesc" class="sdesc"></div>
+      <div class="mgrid" id="sStats"></div>
+      <div class="msec">PnL over time (Polymarket)</div>
+      <div class="mgrid" id="sPnl"></div>
+      <div class="msec">What we've seen them do</div>
+      <div class="mgrid" id="sOurs"></div>
+      <a id="sProfile" class="bigbtn" href="#" target="_blank" rel="noopener">Open trader on Polymarket ↗</a>
     </div>
   </div>
 </div>
@@ -554,6 +735,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(btn.dataset.tab).classList.add('active');
+  if(btn.dataset.tab==='suspects') loadSuspects();
 });
 
 function render(d){
@@ -772,6 +954,124 @@ function drawChart(box, pts){
   });
   cover.addEventListener('mouseleave', ()=>{ cx.style.display='none'; cdot.style.display='none'; tip.style.display='none'; });
 }
+
+// ---------- suspects ----------
+window.SUSPECTS = null;
+window.SENRICH = {};   // wallet -> enriched data
+let SUS_CAT = 'biggest';
+const ENRICH_CAP = 40; // how many to enrich for richest/profit/winrate
+
+async function loadSuspects(force){
+  if(window.SUSPECTS && !force) { renderSuspects(SUS_CAT); return; }
+  const box = document.getElementById('suspectsList');
+  box.innerHTML = '<div class="empty">Loading suspects…</div>';
+  try{
+    const u='/api/suspects'+(TOKEN?('?token='+encodeURIComponent(TOKEN)):'');
+    window.SUSPECTS = (await (await fetch(u,{cache:'no-store'})).json()).suspects||[];
+    document.getElementById('c-sus').textContent = window.SUSPECTS.length||'';
+    renderSuspects(SUS_CAT);
+  }catch(e){ box.innerHTML='<div class="empty">Couldn\'t load suspects.</div>'; }
+}
+
+async function enrichTop(n){
+  const list = (window.SUSPECTS||[]).slice(0, n);
+  await Promise.all(list.map(async s=>{
+    if(window.SENRICH[s.wallet]) return;
+    try{
+      const u='/api/suspect?w='+encodeURIComponent(s.wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
+      window.SENRICH[s.wallet] = await (await fetch(u,{cache:'no-store'})).json();
+    }catch(e){ window.SENRICH[s.wallet] = {}; }
+  }));
+}
+
+document.getElementById('suspectCats').addEventListener('click', async e=>{
+  const b=e.target.closest('.ivbtn'); if(!b) return;
+  document.querySelectorAll('#suspectCats .ivbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); SUS_CAT=b.dataset.cat;
+  if(['richest','profit','winrate'].includes(SUS_CAT)){
+    document.getElementById('suspectsList').innerHTML='<div class="empty">Loading live Polymarket stats… (first time can take a few seconds)</div>';
+    await enrichTop(ENRICH_CAP);
+  }
+  renderSuspects(SUS_CAT);
+});
+
+function renderSuspects(cat){
+  const box=document.getElementById('suspectsList');
+  let list=(window.SUSPECTS||[]).slice();
+  if(!list.length){ box.innerHTML='<div class="empty">No suspects yet — the bot logs whales as it flags them.</div>'; return; }
+  const enr=w=>window.SENRICH[w]||{};
+  let metric, label;
+  if(cat==='biggest'){ list.sort((a,b)=>b.flagged_usd-a.flagged_usd); metric=s=>money(s.flagged_usd); label='flagged'; }
+  else if(cat==='heavy'){ list.sort((a,b)=>b.markets-a.markets); metric=s=>s.markets+' mkts'; label='markets'; }
+  else if(cat==='active'){ list.sort((a,b)=>b.flags-a.flags); metric=s=>s.flags+'×'; label='flags'; }
+  else if(cat==='richest'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).value||-1)-(enr(a.wallet).value||-1)); metric=s=>{const v=enr(s.wallet).value; return v==null?'—':money(v);}; label='balance'; }
+  else if(cat==='profit'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).pnl_all??-1e18)-(enr(a.wallet).pnl_all??-1e18)); metric=s=>{const v=enr(s.wallet).pnl_all; return v==null?'—':money(v);}; label='all-time'; }
+  else if(cat==='winrate'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).win_rate??-1)-(enr(a.wallet).win_rate??-1)); metric=s=>{const v=enr(s.wallet).win_rate; return v==null?'—':(v*100).toFixed(0)+'%';}; label='win rate'; }
+
+  box.innerHTML = '<div class="suspects-grid">' + list.map(s=>{
+    const e=enr(s.wallet);
+    const hl = metric(s);
+    const hlCls = (cat==='profit') ? signClass(e.pnl_all) : '';
+    return `<div class="suspect" data-w="${esc(s.wallet)}">
+      <div class="hl ${hlCls}">${hl}</div>
+      <div class="av">🕵️</div>
+      <div class="nm">${esc(s.name)}</div>
+      <div class="ad">${esc(s.wallet.slice(0,10))}…${esc(s.wallet.slice(-4))}</div>
+      <div class="row"><span>Flagged</span><b>${money(s.flagged_usd)}</b></div>
+      <div class="row"><span>Times flagged</span><b>${s.flags}</b></div>
+      <div class="row"><span>Markets</span><b>${s.markets}</b></div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+document.getElementById('suspectsList').addEventListener('click', e=>{
+  const c=e.target.closest('.suspect'); if(c) openSuspect(c.dataset.w);
+});
+document.getElementById('sClose').addEventListener('click', ()=>document.getElementById('soverlay').classList.remove('show'));
+document.getElementById('soverlay').addEventListener('click', e=>{ if(e.target.id==='soverlay') e.currentTarget.classList.remove('show'); });
+
+async function openSuspect(wallet){
+  const base=(window.SUSPECTS||[]).find(s=>s.wallet===wallet)||{wallet,name:_fallbackName(wallet)};
+  document.getElementById('sTitle').textContent = base.name;
+  document.getElementById('sSub').textContent = wallet;
+  document.getElementById('sProfile').href = 'https://polymarket.com/profile/'+wallet;
+  document.getElementById('sDesc').textContent = 'Loading their Polymarket dossier…';
+  document.getElementById('sStats').innerHTML=''; document.getElementById('sPnl').innerHTML=''; document.getElementById('sOurs').innerHTML='';
+  document.getElementById('soverlay').classList.add('show');
+  let e = window.SENRICH[wallet];
+  if(!e){
+    try{ const u='/api/suspect?w='+encodeURIComponent(wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
+      e = window.SENRICH[wallet] = await (await fetch(u,{cache:'no-store'})).json(); }catch(_){ e={}; }
+  }
+  const mstat=(l,v,cls)=>`<div class="mstat"><div class="l">${l}</div><div class="v ${cls||''}">${v}</div></div>`;
+  // description
+  const wr = e.win_rate!=null ? (e.win_rate*100).toFixed(0)+'% win rate' : 'an unknown win rate';
+  const age = e.age_days!=null ? `has been trading on Polymarket for ${Math.round(e.age_days)} days` : 'has been trading for a while';
+  const bal = e.value!=null ? `holds ${money(e.value)} on the platform` : 'has an unknown balance';
+  const pl = e.pnl_all!=null ? `is ${e.pnl_all>=0?'up':'down'} ${money(Math.abs(e.pnl_all))} all-time` : 'has murky all-time numbers';
+  document.getElementById('sDesc').innerHTML =
+    `<b>${esc(base.name)}</b> ${age}, ${bal}, and ${pl} with ${wr}` +
+    (e.markets_traded?` across ${e.markets_traded} markets`:'') + '. Our bot has flagged this wallet ' +
+    `<b>${base.flags||0}</b> time(s) for a total of <b>${money(base.flagged_usd||0)}</b> in suspicious buys.`;
+  document.getElementById('sStats').innerHTML =
+    mstat('Money in wallet', e.value!=null?money(e.value):'—') +
+    mstat('Win rate', e.win_rate!=null?(e.win_rate*100).toFixed(1)+'%':'—', '') +
+    mstat('W / L', (e.wins!=null?e.wins:'?')+' / '+(e.losses!=null?e.losses:'?')) +
+    mstat('On Polymarket', e.age_days!=null?Math.round(e.age_days)+' days':'—', '') +
+    mstat('Since', e.first_seen||'—') +
+    mstat('Markets traded', e.markets_traded!=null?e.markets_traded:'—');
+  document.getElementById('sPnl').innerHTML =
+    mstat('Today', e.pnl_1d!=null?money(e.pnl_1d):'—', signClass(e.pnl_1d)) +
+    mstat('This week', e.pnl_7d!=null?money(e.pnl_7d):'—', signClass(e.pnl_7d)) +
+    mstat('This month', e.pnl_30d!=null?money(e.pnl_30d):'—', signClass(e.pnl_30d)) +
+    mstat('All-time', e.pnl_all!=null?money(e.pnl_all):'—', signClass(e.pnl_all));
+  document.getElementById('sOurs').innerHTML =
+    mstat('We flagged', money(base.flagged_usd||0)) +
+    mstat('Times flagged', base.flags||0) +
+    mstat('In markets', base.markets||0) +
+    mstat('First seen by us', base.first_iso||'—');
+}
+function _fallbackName(w){ return 'Suspect '+(w?w.slice(0,6):''); }
 
 async function tick(){
   try {
