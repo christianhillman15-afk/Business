@@ -41,6 +41,70 @@ def _cached_midpoint(client: PolymarketClient, token_id: str) -> float | None:
     return price
 
 
+def _history_stats(settled, starting: float, now: float) -> dict:
+    """Compute account-history metrics from the list of settled positions.
+
+    Everything here is derived from each settled bet's ``pnl`` and ``settled_ts``
+    (both already stored), so no extra files or daemon changes are needed.
+    'Balance' is the realized/locked-in balance: starting + cumulative settled
+    PnL (it ignores open-position price swings, which live on the Overview tab).
+    """
+    from collections import defaultdict
+
+    s = sorted([p for p in settled if p.settled_ts], key=lambda p: p.settled_ts)
+
+    def window_pnl(secs: float) -> float:
+        return round(sum(p.pnl for p in s if now - p.settled_ts <= secs), 2)
+
+    running = 0.0
+    peak = starting
+    for p in s:
+        running += p.pnl
+        peak = max(peak, starting + running)
+
+    pnls = [p.pnl for p in s]
+    wins = [p.pnl for p in s if p.status == "won"]
+    losses = [p.pnl for p in s if p.status == "lost"]
+
+    days: dict[str, float] = defaultdict(float)
+    for p in s:
+        day = time.strftime("%Y-%m-%d", time.gmtime(p.settled_ts))
+        days[day] += p.pnl
+
+    streak = 0
+    streak_type = ""
+    for p in reversed(s):
+        t = "W" if p.status == "won" else "L"
+        if not streak_type:
+            streak_type, streak = t, 1
+        elif t == streak_type:
+            streak += 1
+        else:
+            break
+
+    return {
+        "starting_balance": round(starting, 2),
+        "current_balance": round(starting + running, 2),
+        "peak_balance": round(peak, 2),
+        "all_time_pnl": round(running, 2),
+        "drawdown_from_peak": round((starting + running) - peak, 2),
+        "today": window_pnl(86_400),
+        "week": window_pnl(7 * 86_400),
+        "month": window_pnl(30 * 86_400),
+        "year": window_pnl(365 * 86_400),
+        "biggest_win": round(max(pnls), 2) if pnls else 0.0,
+        "biggest_loss": round(min(pnls), 2) if pnls else 0.0,
+        "avg_win": round(sum(wins) / len(wins), 2) if wins else 0.0,
+        "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
+        "best_day": round(max(days.values()), 2) if days else 0.0,
+        "worst_day": round(min(days.values()), 2) if days else 0.0,
+        "total_settled": len(s),
+        "total_wagered": round(sum(p.cost_usd for p in s), 2),
+        "streak": streak,
+        "streak_type": streak_type,
+    }
+
+
 def _market_url(event_slug: str, slug: str) -> str:
     """Build a polymarket.com link from a market's slug (best-effort)."""
     s = (event_slug or slug or "").strip()
@@ -139,6 +203,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
 
     return {
         "stats": stats,
+        "history": _history_stats(closed_pos, cfg.paper.starting_balance, time.time()),
         "open_positions": open_rows,
         "settled_positions": [settled_dict(p) for p in closed_pos][:50],
         "alerts": _tail_jsonl(cfg.notifications.file.path, cfg.dashboard.recent_alerts),
@@ -291,6 +356,9 @@ PAGE = r"""<!doctype html>
   .panel.active{ display:block; }
   @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
 
+  .section-title{ font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em;
+                  font-weight:700; margin:22px 2px 12px; }
+  .section-title:first-child{ margin-top:4px; }
   /* stat cards */
   .cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:14px; }
   .card{ position:relative; overflow:hidden; background:var(--panel); border:1px solid var(--line);
@@ -355,12 +423,21 @@ PAGE = r"""<!doctype html>
   <div class="tabs" id="tabs">
     <button class="tab active" data-tab="overview">Overview</button>
     <button class="tab" data-tab="positions">Current Positions<span class="count" id="c-pos"></span></button>
+    <button class="tab" data-tab="history">Account History</button>
     <button class="tab" data-tab="alerts">Alerts<span class="count" id="c-al"></span></button>
     <button class="tab" data-tab="settled">Settled<span class="count" id="c-st"></span></button>
   </div>
 
   <div class="panel active" id="overview"><div class="cards" id="cards"></div></div>
   <div class="panel" id="positions"><div class="tablecard" id="open"></div></div>
+  <div class="panel" id="history">
+    <div class="section-title">Balance</div>
+    <div class="cards" id="histTop"></div>
+    <div class="section-title">Performance over time</div>
+    <div class="cards" id="histTime"></div>
+    <div class="section-title">Trade stats</div>
+    <div class="cards" id="histStats"></div>
+  </div>
   <div class="panel" id="alerts"><div class="tablecard" id="alertsBody"></div></div>
   <div class="panel" id="settled"><div class="tablecard" id="settledBody"></div></div>
 </div>
@@ -420,6 +497,32 @@ function render(d){
     card('Open positions', s.open_positions, '', 'blue') +
     card('Cash', money(s.cash), '', 'blue') +
     card('ROI', pct(s.roi), signClass(s.roi), s.roi>=0?'green':'red');
+
+  // ACCOUNT HISTORY
+  const h = d.history;
+  if (h){
+    const ddCls = h.drawdown_from_peak < 0 ? 'red' : 'green';
+    document.getElementById('histTop').innerHTML =
+      card('Peak balance', money(h.peak_balance), '', 'teal', 'highest ever') +
+      card('Current balance', money(h.current_balance), signClass(h.all_time_pnl), h.all_time_pnl>=0?'green':'red', 'realized') +
+      card('All-time P&L', money(h.all_time_pnl), signClass(h.all_time_pnl), h.all_time_pnl>=0?'green':'red', h.total_settled+' settled') +
+      card('Down from peak', money(h.drawdown_from_peak), signClass(h.drawdown_from_peak), ddCls);
+    document.getElementById('histTime').innerHTML =
+      card('Today', money(h.today), signClass(h.today), h.today>=0?'green':'red') +
+      card('This week', money(h.week), signClass(h.week), h.week>=0?'green':'red') +
+      card('This month', money(h.month), signClass(h.month), h.month>=0?'green':'red') +
+      card('This year', money(h.year), signClass(h.year), h.year>=0?'green':'red');
+    const streak = h.streak ? (h.streak + (h.streak_type==='W'?' wins':' losses')) : '—';
+    document.getElementById('histStats').innerHTML =
+      card('Biggest win', money(h.biggest_win), 'pos', 'green') +
+      card('Biggest loss', money(h.biggest_loss), 'neg', 'red') +
+      card('Avg win', money(h.avg_win), 'pos', 'green') +
+      card('Avg loss', money(h.avg_loss), 'neg', 'red') +
+      card('Best day', money(h.best_day), signClass(h.best_day), 'green') +
+      card('Worst day', money(h.worst_day), signClass(h.worst_day), 'red') +
+      card('Current streak', streak, h.streak_type==='W'?'pos':(h.streak_type==='L'?'neg':''), 'amber') +
+      card('Total wagered', money(h.total_wagered), '', 'blue', h.total_settled+' bets');
+  }
 
   // current positions
   const op = d.open_positions;
