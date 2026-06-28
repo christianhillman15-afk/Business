@@ -205,23 +205,47 @@ def enrich_suspect(client: PolymarketClient, wallet: str) -> dict:
     return data
 
 
+def _suspicion(flags: int, usd: float, markets: int, span_s: float) -> list[str]:
+    """Return human-readable red flags for a wallet. A wallet is considered
+    'very obviously suspicious' only when it trips 2+ of these."""
+    reasons = []
+    if flags >= 3:
+        reasons.append(f"flagged {flags}× (repeat offender)")
+    if usd >= 25_000:
+        reasons.append(f"${usd:,.0f} in flagged buys")
+    if markets >= 5:
+        reasons.append(f"hit {markets} different markets")
+    if flags >= 4 and 0 < span_s < 3600:
+        reasons.append("burst of buys within an hour")
+    if usd >= 100_000:
+        reasons.append("six-figure flagged volume")
+    return reasons
+
+
 def build_suspects(state) -> list[dict]:
     """The tracked suspect list from our own observations (no external calls)."""
     out = []
     for wallet, rec in state.suspects.items():
+        flags = rec.get("flags", 0)
+        usd = round(rec.get("usd", 0.0), 2)
+        markets = len(rec.get("markets", []))
+        span = rec.get("last_ts", 0) - rec.get("first_ts", 0)
+        reasons = _suspicion(flags, usd, markets, span)
         out.append(
             {
                 "wallet": wallet,
                 "name": _funny_name(wallet),
-                "flags": rec.get("flags", 0),
-                "flagged_usd": round(rec.get("usd", 0.0), 2),
-                "markets": len(rec.get("markets", [])),
+                "flags": flags,
+                "flagged_usd": usd,
+                "markets": markets,
                 "first_ts": rec.get("first_ts", 0),
                 "first_iso": time.strftime(
                     "%Y-%m-%d", time.gmtime(rec.get("first_ts", 0))
                 )
                 if rec.get("first_ts")
                 else "",
+                "suspicion": len(reasons),
+                "reasons": reasons,
             }
         )
     out.sort(key=lambda s: s["flagged_usd"], reverse=True)
@@ -592,6 +616,12 @@ PAGE = r"""<!doctype html>
   .suspect .row{ display:flex; justify-content:space-between; font-size:12.5px; margin-top:9px; color:var(--muted); }
   .suspect .row b{ color:var(--txt); font-weight:600; }
   .suspect .hl{ position:absolute; top:12px; right:14px; font-size:13px; font-weight:800; }
+  .ivbtn.sus{ border-color:#5a2330; color:#ff8ba0; }
+  .ivbtn.sus.active{ background:linear-gradient(135deg,#f87171,#ef4444); color:#1a0608; border-color:transparent; }
+  .suspect.flagged{ border-color:#5a2330; }
+  .suspect.flagged::after{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--red); }
+  .reasons{ margin-top:10px; display:flex; flex-direction:column; gap:5px; }
+  .reason{ font-size:11.5px; color:#ff8ba0; background:var(--red-bg); border-radius:7px; padding:4px 8px; }
   .sdesc{ background:var(--bg2); border:1px solid var(--line); border-radius:11px; padding:13px 15px;
           font-size:13.5px; line-height:1.5; color:var(--txt); margin-bottom:14px; }
   .bigbtn{ display:block; text-align:center; margin-top:18px; padding:11px; border-radius:11px;
@@ -645,6 +675,7 @@ PAGE = r"""<!doctype html>
   </div>
   <div class="panel" id="suspects">
     <div class="ivbar wrapbar" id="suspectCats">
+      <button class="ivbtn sus" data-cat="suspicious">🚩 Most Suspicious</button>
       <button class="ivbtn active" data-cat="biggest">💵 Biggest Buyer</button>
       <button class="ivbtn" data-cat="heavy">🔁 Heavy Buyer</button>
       <button class="ivbtn" data-cat="active">⚡ Most Active</button>
@@ -693,6 +724,7 @@ PAGE = r"""<!doctype html>
     </div>
     <div class="mbody">
       <div id="sDesc" class="sdesc"></div>
+      <div id="sReasons"></div>
       <div class="mgrid" id="sStats"></div>
       <div class="msec">PnL over time (Polymarket)</div>
       <div class="mgrid" id="sPnl"></div>
@@ -1000,26 +1032,36 @@ function renderSuspects(cat){
   let list=(window.SUSPECTS||[]).slice();
   if(!list.length){ box.innerHTML='<div class="empty">No suspects yet — the bot logs whales as it flags them.</div>'; return; }
   const enr=w=>window.SENRICH[w]||{};
-  let metric, label;
-  if(cat==='biggest'){ list.sort((a,b)=>b.flagged_usd-a.flagged_usd); metric=s=>money(s.flagged_usd); label='flagged'; }
-  else if(cat==='heavy'){ list.sort((a,b)=>b.markets-a.markets); metric=s=>s.markets+' mkts'; label='markets'; }
-  else if(cat==='active'){ list.sort((a,b)=>b.flags-a.flags); metric=s=>s.flags+'×'; label='flags'; }
-  else if(cat==='richest'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).value||-1)-(enr(a.wallet).value||-1)); metric=s=>{const v=enr(s.wallet).value; return v==null?'—':money(v);}; label='balance'; }
-  else if(cat==='profit'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).pnl_all??-1e18)-(enr(a.wallet).pnl_all??-1e18)); metric=s=>{const v=enr(s.wallet).pnl_all; return v==null?'—':money(v);}; label='all-time'; }
-  else if(cat==='winrate'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).win_rate??-1)-(enr(a.wallet).win_rate??-1)); metric=s=>{const v=enr(s.wallet).win_rate; return v==null?'—':(v*100).toFixed(0)+'%';}; label='win rate'; }
+  let metric;
+  const showReasons = (cat==='suspicious');
+  if(cat==='suspicious'){
+    list = list.filter(s=>(s.suspicion||0) >= 2)
+               .sort((a,b)=> (b.suspicion-a.suspicion) || (b.flagged_usd-a.flagged_usd));
+    if(!list.length){ box.innerHTML='<div class="empty">🎉 No wallets are <b>obviously</b> suspicious right now — needs 2+ red flags (repeat buys, big money, many markets, or bursts).</div>'; return; }
+    metric=s=>'🚩 '+s.suspicion;
+  }
+  else if(cat==='biggest'){ list.sort((a,b)=>b.flagged_usd-a.flagged_usd); metric=s=>money(s.flagged_usd); }
+  else if(cat==='heavy'){ list.sort((a,b)=>b.markets-a.markets); metric=s=>s.markets+' mkts'; }
+  else if(cat==='active'){ list.sort((a,b)=>b.flags-a.flags); metric=s=>s.flags+'×'; }
+  else if(cat==='richest'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).value||-1)-(enr(a.wallet).value||-1)); metric=s=>{const v=enr(s.wallet).value; return v==null?'—':money(v);}; }
+  else if(cat==='profit'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).pnl_all??-1e18)-(enr(a.wallet).pnl_all??-1e18)); metric=s=>{const v=enr(s.wallet).pnl_all; return v==null?'—':money(v);}; }
+  else if(cat==='winrate'){ list=list.slice(0,ENRICH_CAP).sort((a,b)=>(enr(b.wallet).win_rate??-1)-(enr(a.wallet).win_rate??-1)); metric=s=>{const v=enr(s.wallet).win_rate; return v==null?'—':(v*100).toFixed(0)+'%';}; }
 
   box.innerHTML = '<div class="suspects-grid">' + list.map(s=>{
     const e=enr(s.wallet);
     const hl = metric(s);
-    const hlCls = (cat==='profit') ? signClass(e.pnl_all) : '';
-    return `<div class="suspect" data-w="${esc(s.wallet)}">
+    const hlCls = (cat==='profit') ? signClass(e.pnl_all) : (cat==='suspicious'?'neg':'');
+    const reasonsHtml = (showReasons && s.reasons && s.reasons.length)
+      ? `<div class="reasons">${s.reasons.map(r=>`<div class="reason">⚠ ${esc(r)}</div>`).join('')}</div>` : '';
+    return `<div class="suspect ${cat==='suspicious'?'flagged':''}" data-w="${esc(s.wallet)}">
       <div class="hl ${hlCls}">${hl}</div>
-      <div class="av">🕵️</div>
+      <div class="av">${cat==='suspicious'?'🚩':'🕵️'}</div>
       <div class="nm">${esc(s.name)}</div>
       <div class="ad">${esc(s.wallet.slice(0,10))}…${esc(s.wallet.slice(-4))}</div>
       <div class="row"><span>Flagged</span><b>${money(s.flagged_usd)}</b></div>
       <div class="row"><span>Times flagged</span><b>${s.flags}</b></div>
       <div class="row"><span>Markets</span><b>${s.markets}</b></div>
+      ${reasonsHtml}
     </div>`;
   }).join('') + '</div>';
 }
@@ -1037,6 +1079,10 @@ async function openSuspect(wallet){
   document.getElementById('sProfile').href = 'https://polymarket.com/profile/'+wallet;
   document.getElementById('sDesc').textContent = 'Loading their Polymarket dossier…';
   document.getElementById('sStats').innerHTML=''; document.getElementById('sPnl').innerHTML=''; document.getElementById('sOurs').innerHTML='';
+  const rz = (base.reasons||[]);
+  document.getElementById('sReasons').innerHTML = rz.length
+    ? `<div class="msec" style="color:#ff8ba0">🚩 Why this wallet looks suspicious</div>
+       <div class="reasons" style="margin-bottom:14px">${rz.map(r=>`<div class="reason">⚠ ${esc(r)}</div>`).join('')}</div>` : '';
   document.getElementById('soverlay').classList.add('show');
   let e = window.SENRICH[wallet];
   if(!e){
