@@ -39,7 +39,7 @@ class PaperPosition:
     shares: float
     cost_usd: float
     opened_ts: float
-    status: str = "open"  # open | won | lost
+    status: str = "open"  # open | won | lost | sold (manual early close)
     settled_ts: float | None = None
     payout_usd: float = 0.0
     slug: str = ""  # market slug, for linking to polymarket.com
@@ -138,6 +138,64 @@ class PaperPortfolio:
         self._append_ledger("open", pos, stake, now)
         return pos
 
+    # -- manual buy / sell (operator commands from the dashboard) ----------
+    def manual_buy(self, position_id: str, usd: float, price: float,
+                   now: float | None = None) -> PaperPosition | None:
+        """Add fake money to an existing OPEN position at ``price`` (current mid)."""
+        now = now if now is not None else time.time()
+        pos = self.positions.get(position_id)
+        if not pos or pos.status != "open" or price <= 0:
+            return None
+        stake = min(float(usd), self.cash)
+        if stake <= 0:
+            return None
+        shares = stake / price
+        self.cash -= stake
+        total_shares = pos.shares + shares
+        pos.cost_usd += stake
+        pos.shares = total_shares
+        pos.entry_price = pos.cost_usd / total_shares if total_shares else price
+        self._append_ledger("buy", pos, stake, now)
+        return pos
+
+    def manual_sell(self, position_id: str, fraction: float, price: float,
+                    now: float | None = None) -> PaperPosition | None:
+        """Sell all (fraction>=1) or part of an open position at ``price``.
+
+        A full sell marks the position 'sold'; a partial sell splits off a
+        'sold' record so realized PnL is captured, leaving the rest open.
+        """
+        now = now if now is not None else time.time()
+        pos = self.positions.get(position_id)
+        if not pos or pos.status != "open" or price <= 0:
+            return None
+        frac = max(0.0, min(1.0, float(fraction)))
+        if frac <= 0:
+            return None
+        shares_sold = pos.shares * frac
+        cost_sold = pos.cost_usd * frac
+        proceeds = shares_sold * price
+        self.cash += proceeds
+        if frac >= 0.999:
+            pos.status = "sold"
+            pos.payout_usd = proceeds
+            pos.settled_ts = now
+            record = pos
+        else:
+            pos.shares -= shares_sold
+            pos.cost_usd -= cost_sold
+            sid = f"{position_id}#sold-{int(now)}"
+            record = PaperPosition(
+                id=sid, condition_id=pos.condition_id, asset=pos.asset, title=pos.title,
+                outcome=pos.outcome, signal_kind=pos.signal_kind, entry_price=pos.entry_price,
+                shares=shares_sold, cost_usd=cost_sold, opened_ts=pos.opened_ts,
+                status="sold", settled_ts=now, payout_usd=proceeds,
+                slug=pos.slug, event_slug=pos.event_slug, wallets=list(pos.wallets),
+            )
+            self.positions[sid] = record
+        self._append_ledger("sell", record, proceeds, now)
+        return record
+
     # -- settlement --------------------------------------------------------
     def settle(self, resolver, now: float | None = None) -> list[PaperPosition]:
         """Settle open positions whose markets have resolved.
@@ -164,13 +222,16 @@ class PaperPortfolio:
 
     # -- reporting ---------------------------------------------------------
     def stats(self) -> dict[str, Any]:
-        closed = [p for p in self.positions.values() if p.status in ("won", "lost")]
+        # Win/loss record counts only naturally-resolved bets; manual 'sold'
+        # closes still contribute to realized PnL but not the win rate.
+        resolved = [p for p in self.positions.values() if p.status in ("won", "lost")]
+        realized_all = [p for p in self.positions.values() if p.status in ("won", "lost", "sold")]
         open_pos = [p for p in self.positions.values() if p.status == "open"]
-        wins = sum(1 for p in closed if p.status == "won")
-        realized = sum(p.pnl for p in closed)
+        wins = sum(1 for p in resolved if p.status == "won")
+        realized = sum(p.pnl for p in realized_all)
         open_cost = sum(p.cost_usd for p in open_pos)
         equity = self.cash + open_cost  # open positions held at cost basis
-        win_rate = (wins / len(closed)) if closed else 0.0
+        win_rate = (wins / len(resolved)) if resolved else 0.0
         roi = (equity - self.cfg.starting_balance) / self.cfg.starting_balance
         return {
             "starting_balance": self.cfg.starting_balance,
@@ -178,9 +239,10 @@ class PaperPortfolio:
             "open_positions": len(open_pos),
             "open_cost_basis": round(open_cost, 2),
             "equity": round(equity, 2),
-            "settled_trades": len(closed),
+            "settled_trades": len(resolved),
+            "sold_trades": sum(1 for p in realized_all if p.status == "sold"),
             "wins": wins,
-            "losses": len(closed) - wins,
+            "losses": len(resolved) - wins,
             "win_rate": round(win_rate, 4),
             "realized_pnl": round(realized, 2),
             "roi": round(roi, 4),

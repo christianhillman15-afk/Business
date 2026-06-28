@@ -97,6 +97,22 @@ class PolymarketClient:
                 return None
         return None
 
+    def fetch_user_name(self, addr: str) -> str:
+        """Best-effort Polymarket username/handle for a wallet (from its trades).
+
+        Returns the handle (e.g. 'phonesculptor') if the user set one, else ''.
+        Polymarket's canonical profile URL is /@<handle>.
+        """
+        try:
+            raw = self._get(
+                f"{self.data_api}/trades", params={"user": addr, "limit": 1}
+            )
+        except Exception:  # noqa: BLE001
+            return ""
+        if isinstance(raw, list) and raw:
+            return str(raw[0].get("name", "") or "")
+        return ""
+
     def fetch_user_value(self, addr: str) -> float | None:
         """Current Polymarket portfolio value (USDC) for a wallet."""
         try:

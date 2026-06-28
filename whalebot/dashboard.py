@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -74,6 +75,8 @@ def _history_stats(settled, starting: float, now: float) -> dict:
     streak = 0
     streak_type = ""
     for p in reversed(s):
+        if p.status not in ("won", "lost"):
+            continue  # manual sells aren't wins or losses
         t = "W" if p.status == "won" else "L"
         if not streak_type:
             streak_type, streak = t, 1
@@ -134,9 +137,38 @@ def _funny_name(wallet: str) -> str:
     return f"{adj} {noun} {title}"
 
 
+import re as _re
+
 # Per-wallet enrichment cache: addr -> (data, fetched_at)
 _suspect_cache: dict[str, tuple[dict, float]] = {}
 _SUSPECT_TTL = 1800.0
+# Per-wallet profile-URL cache: addr -> (url, fetched_at)
+_url_cache: dict[str, tuple[str, float]] = {}
+_URL_TTL = 3600.0
+_HANDLE_RE = _re.compile(r"^[A-Za-z0-9_]{2,30}$")
+
+
+def wallet_profile_url(client: PolymarketClient, wallet: str) -> str:
+    """Canonical Polymarket profile URL for a wallet.
+
+    Polymarket profiles live at /@<handle>; we resolve the handle from the
+    wallet's trades. Wallets with no handle (auto '0x..-<ms>' pseudonyms) fall
+    back to /profile/<address>, which Polymarket still resolves.
+    """
+    if not wallet:
+        return ""
+    now = time.time()
+    hit = _url_cache.get(wallet)
+    if hit and (now - hit[1]) < _URL_TTL:
+        return hit[0]
+    name = client.fetch_user_name(wallet)
+    # A real handle is alphanumeric/underscore and not the '0x..-<digits>' form.
+    if name and _HANDLE_RE.match(name) and not name.lower().startswith("0x"):
+        url = f"https://polymarket.com/@{name}"
+    else:
+        url = f"https://polymarket.com/profile/{wallet}"
+    _url_cache[wallet] = (url, now)
+    return url
 
 
 def enrich_suspect(client: PolymarketClient, wallet: str) -> dict:
@@ -188,6 +220,7 @@ def enrich_suspect(client: PolymarketClient, wallet: str) -> dict:
 
     data = {
         "wallet": wallet,
+        "profile_url": wallet_profile_url(client, wallet),
         "value": round(value, 2) if value is not None else None,
         "pnl_all": round(pnl_all, 2) if pnl_all is not None else None,
         "pnl_1d": round(pnl_1d, 2) if pnl_1d is not None else None,
@@ -299,13 +332,14 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
         portfolio.positions.values(), key=lambda p: p.opened_ts, reverse=True
     )
     open_pos = [p for p in positions if p.status == "open"]
-    closed_pos = [p for p in positions if p.status in ("won", "lost")]
+    closed_pos = [p for p in positions if p.status in ("won", "lost", "sold")]
 
     def _iso(ts):
         return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ts)) if ts else ""
 
     def settled_dict(p):
         return {
+            "id": p.id,
             "title": p.title,
             "url": _market_url(p.event_slug, p.slug),
             "outcome": p.outcome,
@@ -338,6 +372,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
             live_value_total += p.cost_usd  # fall back to cost when no price
         open_rows.append(
             {
+                "id": p.id,
                 "title": p.title,
                 "url": _market_url(p.event_slug, p.slug),
                 "outcome": p.outcome,
@@ -409,11 +444,69 @@ def _make_handler(cfg: Config):
             elif parsed.path == "/api/suspect":
                 w = query.get("w", [""])[0].lower()
                 self._send_json(enrich_suspect(client, w) if w else {})
+            elif parsed.path == "/api/walleturl":
+                w = query.get("w", [""])[0].lower()
+                self._send_json({"url": wallet_profile_url(client, w) if w else ""})
             elif parsed.path in ("/", "/index.html"):
                 self._send_html(PAGE)
             else:
                 self.send_response(404)
                 self.end_headers()
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
+            if not self._authorized(query):
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Forbidden")
+                return
+            if parsed.path != "/api/order":
+                self.send_response(404)
+                self.end_headers()
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                body = self.rfile.read(length) if length else b"{}"
+                cmd = json.loads(body or b"{}")
+            except Exception:  # noqa: BLE001
+                self._send_json({"ok": False, "error": "bad json"})
+                return
+
+            action = str(cmd.get("action", "")).lower()
+            pid = str(cmd.get("position_id", ""))
+            if action not in ("buy", "sell") or not pid:
+                self._send_json({"ok": False, "error": "need action buy|sell and position_id"})
+                return
+            out = {"action": action, "position_id": pid, "ts": time.time()}
+            if action == "buy":
+                try:
+                    usd = float(cmd.get("usd", 0))
+                except (TypeError, ValueError):
+                    usd = 0.0
+                if usd <= 0:
+                    self._send_json({"ok": False, "error": "usd must be > 0"})
+                    return
+                out["usd"] = round(usd, 2)
+            else:
+                try:
+                    frac = float(cmd.get("fraction", 1.0))
+                except (TypeError, ValueError):
+                    frac = 1.0
+                out["fraction"] = max(0.0, min(1.0, frac))
+
+            cdir = cfg.paper.commands_dir
+            try:
+                os.makedirs(cdir, exist_ok=True)
+                fn = os.path.join(cdir, f"cmd_{uuid.uuid4().hex}.json")
+                tmp = fn + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as fh:
+                    json.dump(out, fh)
+                os.replace(tmp, fn)  # atomic; bot won't read a half-written file
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(exc)})
+                return
+            self._send_json({"ok": True, "queued": out})
 
         def _send_json(self, payload: dict):
             body = json.dumps(payload).encode("utf-8")
@@ -563,6 +656,7 @@ PAGE = r"""<!doctype html>
   .pill.low,.pill.watchlist{ background:#10233b; color:var(--blue); }
   .pill.won,.pill.up{ background:var(--green-bg); color:var(--green); }
   .pill.lost,.pill.down{ background:var(--red-bg); color:var(--red); }
+  .pill.sold{ background:#2a2f10; color:#ffd27a; }
   .empty{ color:var(--dim); padding:34px 16px; text-align:center; font-style:italic; }
   footer{ text-align:center; color:var(--dim); font-size:12px; padding:28px 16px 8px; }
   tr.clickrow{ cursor:pointer; }
@@ -628,6 +722,19 @@ PAGE = r"""<!doctype html>
            background:linear-gradient(135deg,#5eead4,#34d399); color:#04110d; font-weight:700;
            text-decoration:none; }
   .bigbtn:hover{ filter:brightness(1.05); }
+  /* buy/sell controls */
+  .actions{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .actions input, .actions select{ background:var(--bg2); border:1px solid var(--line2); color:var(--txt);
+    border-radius:9px; padding:9px 11px; font-size:13px; min-width:96px; }
+  .actbtn{ border:none; border-radius:9px; padding:9px 16px; font-weight:700; font-size:13px; cursor:pointer; }
+  .actbtn.buy{ background:linear-gradient(135deg,#34d399,#10b981); color:#04110d; }
+  .actbtn.sell{ background:linear-gradient(135deg,#f87171,#ef4444); color:#1a0608; }
+  .actbtn:hover{ filter:brightness(1.06); }
+  .actbtn:disabled{ opacity:.5; cursor:default; }
+  .actmsg{ font-size:12.5px; color:var(--muted); margin-top:9px; min-height:16px; }
+  .actmsg.ok{ color:var(--green); } .actmsg.err{ color:var(--red); }
+  .papertag{ font-size:10px; font-weight:700; color:var(--amber); background:#352a10;
+    border-radius:6px; padding:2px 7px; margin-left:8px; vertical-align:middle; }
 </style>
 </head>
 <body>
@@ -699,6 +806,7 @@ PAGE = r"""<!doctype html>
     </div>
     <div class="mbody">
       <div class="mgrid" id="dStats"></div>
+      <div id="dActions"></div>
       <div class="msec">Live price (Polymarket)</div>
       <div class="ivbar" id="dIv">
         <button class="ivbtn" data-iv="6h">6h</button>
@@ -905,12 +1013,33 @@ function openDetail(p){
     return `<div class="mstat"><div class="l">${l}</div><div class="v ${cls}">${v}</div></div>`;
   }).join('');
 
-  // wallets with profile links
+  // buy/sell controls (open positions only) — PAPER money
+  const isOpen = !p.status || p.status==='open';
+  const act = document.getElementById('dActions');
+  if(isOpen){
+    act.innerHTML = `<div class="msec">Manage position <span class="papertag">PAPER</span></div>
+      <div class="actions">
+        <input id="buyAmt" type="number" min="1" step="1" placeholder="$ amount">
+        <button class="actbtn buy" id="buyBtn">Buy more</button>
+        <select id="sellFrac">
+          <option value="1">Sell 100%</option><option value="0.5">Sell 50%</option><option value="0.25">Sell 25%</option>
+        </select>
+        <button class="actbtn sell" id="sellBtn">Sell</button>
+      </div>
+      <div class="actmsg" id="actMsg">Orders apply on the bot's next cycle (~15s) at the live price.</div>`;
+    document.getElementById('buyBtn').onclick = ()=>sendOrder('buy', {usd: parseFloat(document.getElementById('buyAmt').value||'0')});
+    document.getElementById('sellBtn').onclick = ()=>sendOrder('sell', {fraction: parseFloat(document.getElementById('sellFrac').value||'1')});
+  } else {
+    act.innerHTML = '';
+  }
+
+  // wallets with profile links (upgraded to /@handle async)
   const ws = p.wallets||[];
-  document.getElementById('dWallets').innerHTML = ws.length ? ws.map(w=>
+  document.getElementById('dWallets').innerHTML = ws.length ? ws.map((w,i)=>
     `<div class="wallet"><code>${esc(w)}</code>
-      <a href="https://polymarket.com/profile/${esc(w)}" target="_blank" rel="noopener">view trader ↗</a></div>`
+      <a id="wlink${i}" href="https://polymarket.com/profile/${esc(w)}" target="_blank" rel="noopener">view trader ↗</a></div>`
   ).join('') : '<div class="empty">Wallet info wasn\'t recorded for this older position.</div>';
+  ws.forEach((w,i)=>upgradeWalletLink(w, 'wlink'+i));
 
   document.getElementById('overlay').classList.add('show');
   // reset interval to 1D and load
@@ -918,6 +1047,32 @@ function openDetail(p){
   loadChart(p.asset, '1d');
 }
 function closeDetail(){ document.getElementById('overlay').classList.remove('show'); CURRENT=null; }
+
+async function upgradeWalletLink(wallet, elId){
+  try{
+    const u='/api/walleturl?w='+encodeURIComponent(wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
+    const url=(await (await fetch(u,{cache:'no-store'})).json()).url;
+    const el=document.getElementById(elId); if(el&&url) el.href=url;
+  }catch(e){}
+}
+
+async function sendOrder(action, payload){
+  if(!CURRENT||!CURRENT.id){ return; }
+  const msg=document.getElementById('actMsg');
+  if(action==='buy' && (!payload.usd||payload.usd<=0)){ msg.className='actmsg err'; msg.textContent='Enter a $ amount to buy.'; return; }
+  const verb = action==='buy' ? `buy $${payload.usd}` : `sell ${Math.round(payload.fraction*100)}%`;
+  if(!confirm(`Confirm PAPER order: ${verb} of "${CURRENT.title}"? (fake money)`)) return;
+  msg.className='actmsg'; msg.textContent='Queuing order…';
+  document.getElementById('buyBtn').disabled=true; document.getElementById('sellBtn').disabled=true;
+  try{
+    const u='/api/order'+(TOKEN?('?token='+encodeURIComponent(TOKEN)):'');
+    const body=Object.assign({action, position_id:CURRENT.id}, payload);
+    const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok){ msg.className='actmsg ok'; msg.textContent='✅ Order queued — it applies on the next bot cycle (~15s). Watch your balance update.'; }
+    else { msg.className='actmsg err'; msg.textContent='⚠ '+(j.error||'failed'); document.getElementById('buyBtn').disabled=false; document.getElementById('sellBtn').disabled=false; }
+  }catch(e){ msg.className='actmsg err'; msg.textContent='⚠ network error'; document.getElementById('buyBtn').disabled=false; document.getElementById('sellBtn').disabled=false; }
+}
 
 async function loadChart(asset, iv){
   const box = document.getElementById('dChart');
@@ -1089,6 +1244,8 @@ async function openSuspect(wallet){
     try{ const u='/api/suspect?w='+encodeURIComponent(wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
       e = window.SENRICH[wallet] = await (await fetch(u,{cache:'no-store'})).json(); }catch(_){ e={}; }
   }
+  // upgrade the profile button to the canonical /@handle link when known
+  if(e && e.profile_url) document.getElementById('sProfile').href = e.profile_url;
   const mstat=(l,v,cls)=>`<div class="mstat"><div class="l">${l}</div><div class="v ${cls||''}">${v}</div></div>`;
   // description
   const wr = e.win_rate!=null ? (e.win_rate*100).toFixed(0)+'% win rate' : 'an unknown win rate';

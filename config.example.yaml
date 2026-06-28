@@ -66,6 +66,8 @@ paper:
   trigger_signals: [large_trade, accumulation, coordinated, watchlist]
   ledger_path: ./paper_ledger.jsonl
   settle_interval_minutes: 30
+  # dashboard drops manual buy/sell orders here; the bot applies them each cycle
+  commands_dir: ./paper_commands
 
 # ── Live following (OFF by default) ──────────────────────────────────────
 # Actually place real orders that follow the whale. Keep dry_run: true until

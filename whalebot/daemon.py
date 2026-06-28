@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import glob
+import json
 import logging
+import os
 import signal
 import time
 
@@ -110,6 +113,7 @@ class WhaleBot:
         for tr in attributed.values():
             self.state.record_suspect(tr.wallet, tr.condition_id, tr.notional, tr.timestamp)
 
+        self._process_commands()
         self._maybe_settle()
 
         # persist + housekeeping
@@ -134,6 +138,62 @@ class WhaleBot:
 
         # live/dry-run follow (independent of paper trading)
         self.executor.maybe_follow(sig)
+
+    def _process_commands(self) -> None:
+        """Apply manual buy/sell commands the dashboard dropped in commands_dir.
+
+        The bot is the single writer of the paper book, so all mutations funnel
+        through here. Each command is one file; we apply then delete it.
+        """
+        cdir = self.cfg.paper.commands_dir
+        if not cdir or not os.path.isdir(cdir):
+            return
+        for path in sorted(glob.glob(os.path.join(cdir, "*.json"))):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    cmd = json.load(fh)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("bad command file %s: %s", path, exc)
+                self._rm(path)
+                continue
+            try:
+                self._apply_command(cmd)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("command failed (%s): %s", cmd, exc)
+            finally:
+                self._rm(path)
+
+    def _apply_command(self, cmd: dict) -> None:
+        action = str(cmd.get("action", "")).lower()
+        pid = str(cmd.get("position_id", ""))
+        pos = self.paper.positions.get(pid)
+        if not pos:
+            log.warning("command for unknown position %s", pid)
+            return
+        price = self.client.fetch_midpoint(pos.asset)
+        if price is None:
+            log.warning("no live price for %s; skipping %s", pid, action)
+            return
+        if action == "buy":
+            usd = float(cmd.get("usd", 0) or 0)
+            r = self.paper.manual_buy(pid, usd, price)
+            if r:
+                log.warning("🟢 manual BUY $%.2f of '%s' @ %.3f", usd, r.title, price)
+        elif action == "sell":
+            frac = float(cmd.get("fraction", 1.0) or 1.0)
+            r = self.paper.manual_sell(pid, frac, price)
+            if r:
+                log.warning("🔴 manual SELL %.0f%% of '%s' @ %.3f → PnL $%+.2f",
+                            frac * 100, r.title, price, r.pnl)
+        else:
+            log.warning("unknown command action: %s", action)
+
+    @staticmethod
+    def _rm(path: str) -> None:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
     def _maybe_settle(self) -> None:
         if not self.cfg.paper.enabled:

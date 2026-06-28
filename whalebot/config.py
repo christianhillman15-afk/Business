@@ -148,6 +148,9 @@ class PaperConfig:
     settle_interval_minutes: float = 30.0
     # don't paper-buy above this price (avoid chasing near-certain outcomes)
     max_price: float = 0.97
+    # directory the dashboard drops manual buy/sell commands into; the bot
+    # consumes them each tick (single-writer: only the bot mutates the book).
+    commands_dir: str = "./paper_commands"
 
 
 @dataclass
