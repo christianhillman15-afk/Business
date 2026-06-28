@@ -27,6 +27,8 @@ class State:
         self.paper: dict[str, Any] = {}
         # wallet (lowercased) -> aggregated "suspect" stats we've observed
         self.suspects: dict[str, dict] = {}
+        # ids of manual buy/sell commands already applied (idempotency)
+        self.applied_commands: list[str] = []
         self.last_settle_ts: float = 0.0
         self._load()
 
@@ -41,6 +43,7 @@ class State:
             self.follow_spend = {k: float(v) for k, v in data.get("follow_spend", {}).items()}
             self.paper = data.get("paper", {}) or {}
             self.suspects = data.get("suspects", {}) or {}
+            self.applied_commands = list(data.get("applied_commands", []) or [])
             self.last_settle_ts = float(data.get("last_settle_ts", 0.0))
         except Exception as exc:  # noqa: BLE001
             log.warning("could not load state from %s (%s); starting fresh", self.path, exc)
@@ -52,6 +55,7 @@ class State:
             "follow_spend": self.follow_spend,
             "paper": self.paper,
             "suspects": self.suspects,
+            "applied_commands": self.applied_commands[-1000:],
             "last_settle_ts": self.last_settle_ts,
         }
         try:
@@ -92,6 +96,16 @@ class State:
             rec["markets"].append(condition_id)
         rec["first_ts"] = min(rec.get("first_ts", ts), ts)
         rec["last_ts"] = max(rec.get("last_ts", ts), ts)
+
+    # -- manual command idempotency ----------------------------------------
+    def command_applied(self, cmd_id: str) -> bool:
+        return cmd_id in self.applied_commands
+
+    def mark_command_applied(self, cmd_id: str) -> None:
+        if cmd_id not in self.applied_commands:
+            self.applied_commands.append(cmd_id)
+            if len(self.applied_commands) > 1000:
+                self.applied_commands = self.applied_commands[-1000:]
 
     # -- follow spend cap --------------------------------------------------
     def follow_spent_today(self, day: str) -> float:

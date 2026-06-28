@@ -11,8 +11,10 @@ Then open: http://YOUR_SERVER_IP:8080
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import math
 import os
 import time
 import uuid
@@ -63,9 +65,12 @@ def _history_stats(settled, starting: float, now: float) -> dict:
         running += p.pnl
         peak = max(peak, starting + running)
 
-    pnls = [p.pnl for p in s]
-    wins = [p.pnl for p in s if p.status == "won"]
-    losses = [p.pnl for p in s if p.status == "lost"]
+    # Resolved bets (won/lost) drive the win/loss-flavored metrics; manual
+    # sells still count toward money-over-time (windows/peak) but not these.
+    resolved = [p for p in s if p.status in ("won", "lost")]
+    res_pnls = [p.pnl for p in resolved]
+    wins = [p.pnl for p in resolved if p.status == "won"]
+    losses = [p.pnl for p in resolved if p.status == "lost"]
 
     days: dict[str, float] = defaultdict(float)
     for p in s:
@@ -95,14 +100,14 @@ def _history_stats(settled, starting: float, now: float) -> dict:
         "week": window_pnl(7 * 86_400),
         "month": window_pnl(30 * 86_400),
         "year": window_pnl(365 * 86_400),
-        "biggest_win": round(max(pnls), 2) if pnls else 0.0,
-        "biggest_loss": round(min(pnls), 2) if pnls else 0.0,
+        "biggest_win": round(max(res_pnls), 2) if res_pnls else 0.0,
+        "biggest_loss": round(min(res_pnls), 2) if res_pnls else 0.0,
         "avg_win": round(sum(wins) / len(wins), 2) if wins else 0.0,
         "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
         "best_day": round(max(days.values()), 2) if days else 0.0,
         "worst_day": round(min(days.values()), 2) if days else 0.0,
-        "total_settled": len(s),
-        "total_wagered": round(sum(p.cost_usd for p in s), 2),
+        "total_settled": len(resolved),
+        "total_wagered": round(sum(p.cost_usd for p in resolved), 2),
         "streak": streak,
         "streak_type": streak_type,
     }
@@ -418,7 +423,7 @@ def _make_handler(cfg: Config):
         def _authorized(self, query: dict) -> bool:
             if not token:
                 return True
-            return query.get("token", [""])[0] == token
+            return hmac.compare_digest(query.get("token", [""])[0], token)
 
         def do_GET(self):
             parsed = urlparse(self.path)
@@ -465,8 +470,29 @@ def _make_handler(cfg: Config):
                 self.send_response(404)
                 self.end_headers()
                 return
+            # State-mutating endpoint: require a configured token so a default
+            # (token-less) deployment can't be traded by anyone who finds it.
+            if not token:
+                self._send_json({"ok": False, "error": "set a dashboard token to enable trading"})
+                return
+            # Cap the request body so a huge Content-Length can't exhaust memory.
             try:
                 length = int(self.headers.get("Content-Length", "0") or 0)
+            except (TypeError, ValueError):
+                length = 0
+            if length < 0 or length > 8192:
+                self._send_json({"ok": False, "error": "body too large"})
+                return
+            # Bound the number of pending command files (disk / per-tick DoS).
+            cdir = cfg.paper.commands_dir
+            try:
+                pending = len([f for f in os.listdir(cdir) if f.endswith(".json")]) if os.path.isdir(cdir) else 0
+            except OSError:
+                pending = 0
+            if pending >= 200:
+                self._send_json({"ok": False, "error": "too many pending orders; try again shortly"})
+                return
+            try:
                 body = self.rfile.read(length) if length else b"{}"
                 cmd = json.loads(body or b"{}")
             except Exception:  # noqa: BLE001
@@ -484,8 +510,8 @@ def _make_handler(cfg: Config):
                     usd = float(cmd.get("usd", 0))
                 except (TypeError, ValueError):
                     usd = 0.0
-                if usd <= 0:
-                    self._send_json({"ok": False, "error": "usd must be > 0"})
+                if not math.isfinite(usd) or usd <= 0:
+                    self._send_json({"ok": False, "error": "usd must be a positive number"})
                     return
                 out["usd"] = round(usd, 2)
             else:
@@ -493,9 +519,10 @@ def _make_handler(cfg: Config):
                     frac = float(cmd.get("fraction", 1.0))
                 except (TypeError, ValueError):
                     frac = 1.0
+                if not math.isfinite(frac):
+                    frac = 1.0
                 out["fraction"] = max(0.0, min(1.0, frac))
 
-            cdir = cfg.paper.commands_dir
             try:
                 os.makedirs(cdir, exist_ok=True)
                 fn = os.path.join(cdir, f"cmd_{uuid.uuid4().hex}.json")
@@ -509,7 +536,7 @@ def _make_handler(cfg: Config):
             self._send_json({"ok": True, "queued": out})
 
         def _send_json(self, payload: dict):
-            body = json.dumps(payload).encode("utf-8")
+            body = json.dumps(payload, allow_nan=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -967,6 +994,18 @@ function render(d){
 
   document.getElementById('dot').classList.remove('off');
   document.getElementById('updated').textContent = 'live · updated ' + new Date().toLocaleTimeString();
+
+  // If a position detail modal is open and the position has just left the open
+  // set (settled or sold), re-render it once so the buy/sell controls disappear.
+  // While it's still open we leave the modal alone to avoid disrupting the user.
+  if(CURRENT && CURRENT.id && document.getElementById('overlay').classList.contains('show')){
+    const stillOpen = (d.open_positions||[]).some(p=>p.id===CURRENT.id);
+    const wasOpen = !CURRENT.status || CURRENT.status==='open';
+    if(wasOpen && !stillOpen){
+      const closed=(d.settled_positions||[]).find(p=>p.id===CURRENT.id);
+      if(closed) openDetail(closed);
+    }
+  }
 }
 
 // ---------- position detail modal ----------
@@ -1037,7 +1076,7 @@ function openDetail(p){
   const ws = p.wallets||[];
   document.getElementById('dWallets').innerHTML = ws.length ? ws.map((w,i)=>
     `<div class="wallet"><code>${esc(w)}</code>
-      <a id="wlink${i}" href="https://polymarket.com/profile/${esc(w)}" target="_blank" rel="noopener">view trader ↗</a></div>`
+      <a id="wlink${i}" data-w="${esc(w)}" href="https://polymarket.com/profile/${esc(w)}" target="_blank" rel="noopener">view trader ↗</a></div>`
   ).join('') : '<div class="empty">Wallet info wasn\'t recorded for this older position.</div>';
   ws.forEach((w,i)=>upgradeWalletLink(w, 'wlink'+i));
 
@@ -1052,7 +1091,9 @@ async function upgradeWalletLink(wallet, elId){
   try{
     const u='/api/walleturl?w='+encodeURIComponent(wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
     const url=(await (await fetch(u,{cache:'no-store'})).json()).url;
-    const el=document.getElementById(elId); if(el&&url) el.href=url;
+    const el=document.getElementById(elId);
+    // only apply if the element still belongs to this wallet (modal may have been reopened)
+    if(el && url && el.dataset.w===wallet) el.href=url;
   }catch(e){}
 }
 
@@ -1070,8 +1111,12 @@ async function sendOrder(action, payload){
     const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
     if(j.ok){ msg.className='actmsg ok'; msg.textContent='✅ Order queued — it applies on the next bot cycle (~15s). Watch your balance update.'; }
-    else { msg.className='actmsg err'; msg.textContent='⚠ '+(j.error||'failed'); document.getElementById('buyBtn').disabled=false; document.getElementById('sellBtn').disabled=false; }
-  }catch(e){ msg.className='actmsg err'; msg.textContent='⚠ network error'; document.getElementById('buyBtn').disabled=false; document.getElementById('sellBtn').disabled=false; }
+    else { msg.className='actmsg err'; msg.textContent='⚠ '+(j.error||'failed'); }
+  }catch(e){ msg.className='actmsg err'; msg.textContent='⚠ network error'; }
+  finally{
+    const bb=document.getElementById('buyBtn'), sb=document.getElementById('sellBtn');
+    if(bb) bb.disabled=false; if(sb) sb.disabled=false;
+  }
 }
 
 async function loadChart(asset, iv){
@@ -1244,8 +1289,11 @@ async function openSuspect(wallet){
     try{ const u='/api/suspect?w='+encodeURIComponent(wallet)+(TOKEN?('&token='+encodeURIComponent(TOKEN)):'');
       e = window.SENRICH[wallet] = await (await fetch(u,{cache:'no-store'})).json(); }catch(_){ e={}; }
   }
-  // upgrade the profile button to the canonical /@handle link when known
-  if(e && e.profile_url) document.getElementById('sProfile').href = e.profile_url;
+  // upgrade the profile button to the canonical /@handle link when known —
+  // but only if this suspect is still the one on screen (avoid a stale async
+  // write when the user quickly opened a different suspect).
+  if(e && e.profile_url && document.getElementById('sSub').textContent === wallet)
+    document.getElementById('sProfile').href = e.profile_url;
   const mstat=(l,v,cls)=>`<div class="mstat"><div class="l">${l}</div><div class="v ${cls||''}">${v}</div></div>`;
   // description
   const wr = e.win_rate!=null ? (e.win_rate*100).toFixed(0)+'% win rate' : 'an unknown win rate';

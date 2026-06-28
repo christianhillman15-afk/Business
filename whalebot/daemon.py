@@ -5,6 +5,7 @@ from __future__ import annotations
 import glob
 import json
 import logging
+import math
 import os
 import signal
 import time
@@ -143,50 +144,89 @@ class WhaleBot:
         """Apply manual buy/sell commands the dashboard dropped in commands_dir.
 
         The bot is the single writer of the paper book, so all mutations funnel
-        through here. Each command is one file; we apply then delete it.
+        through here. Ordering is apply -> persist -> delete (with an idempotency
+        set) so a crash can never lose a command nor double-apply one:
+          * crash before save  -> files remain, ids not persisted -> re-applied
+          * crash after save   -> ids persisted -> re-read commands are skipped
         """
         cdir = self.cfg.paper.commands_dir
         if not cdir or not os.path.isdir(cdir):
             return
+        to_delete: list[str] = []
+        applied_any = False
         for path in sorted(glob.glob(os.path.join(cdir, "*.json"))):
+            cid = os.path.basename(path)
             try:
                 with open(path, "r", encoding="utf-8") as fh:
                     cmd = json.load(fh)
             except Exception as exc:  # noqa: BLE001
                 log.warning("bad command file %s: %s", path, exc)
-                self._rm(path)
+                to_delete.append(path)
+                continue
+            if self.state.command_applied(cid):
+                to_delete.append(path)  # already applied in a prior tick
                 continue
             try:
                 self._apply_command(cmd)
             except Exception as exc:  # noqa: BLE001
                 log.warning("command failed (%s): %s", cmd, exc)
-            finally:
-                self._rm(path)
+            self.state.mark_command_applied(cid)
+            applied_any = True
+            to_delete.append(path)
+
+        if applied_any:
+            # Persist the mutated book + idempotency set BEFORE deleting files.
+            self.state.paper = self.paper.to_blob()
+            self.state.save()
+        for path in to_delete:
+            self._rm(path)
 
     def _apply_command(self, cmd: dict) -> None:
         action = str(cmd.get("action", "")).lower()
         pid = str(cmd.get("position_id", ""))
+        if action not in ("buy", "sell"):
+            log.warning("unknown command action: %s", action)
+            return
         pos = self.paper.positions.get(pid)
         if not pos:
             log.warning("command for unknown position %s", pid)
             return
         price = self.client.fetch_midpoint(pos.asset)
-        if price is None:
-            log.warning("no live price for %s; skipping %s", pid, action)
-            return
         if action == "buy":
-            usd = float(cmd.get("usd", 0) or 0)
+            if price is None or not math.isfinite(price) or price <= 0:
+                log.warning("no usable price for BUY %s; dropped", pid)
+                return
+            usd = self._finite(cmd.get("usd"))
+            if usd is None or usd <= 0:
+                log.warning("invalid BUY amount for %s; dropped", pid)
+                return
             r = self.paper.manual_buy(pid, usd, price)
             if r:
                 log.warning("🟢 manual BUY $%.2f of '%s' @ %.3f", usd, r.title, price)
-        elif action == "sell":
-            frac = float(cmd.get("fraction", 1.0) or 1.0)
+            else:
+                log.warning("BUY of %s had no effect (insufficient cash / not open)", pid)
+        else:  # sell
+            if price is None or not math.isfinite(price) or price < 0:
+                log.warning("no usable price for SELL %s; dropped", pid)
+                return
+            frac = self._finite(cmd.get("fraction"))
+            if frac is None:
+                frac = 1.0
             r = self.paper.manual_sell(pid, frac, price)
             if r:
                 log.warning("🔴 manual SELL %.0f%% of '%s' @ %.3f → PnL $%+.2f",
-                            frac * 100, r.title, price, r.pnl)
-        else:
-            log.warning("unknown command action: %s", action)
+                            max(0.0, min(1.0, frac)) * 100, r.title, price, r.pnl)
+            else:
+                log.warning("SELL of %s had no effect (not open?)", pid)
+
+    @staticmethod
+    def _finite(value) -> float | None:
+        """Parse a number, rejecting None/NaN/Infinity."""
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            return None
+        return f if math.isfinite(f) else None
 
     @staticmethod
     def _rm(path: str) -> None:

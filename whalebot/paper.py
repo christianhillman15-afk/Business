@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -144,7 +146,9 @@ class PaperPortfolio:
         """Add fake money to an existing OPEN position at ``price`` (current mid)."""
         now = now if now is not None else time.time()
         pos = self.positions.get(position_id)
-        if not pos or pos.status != "open" or price <= 0:
+        if not pos or pos.status != "open" or not math.isfinite(price) or price <= 0:
+            return None
+        if not math.isfinite(usd) or usd <= 0:
             return None
         stake = min(float(usd), self.cash)
         if stake <= 0:
@@ -167,7 +171,11 @@ class PaperPortfolio:
         """
         now = now if now is not None else time.time()
         pos = self.positions.get(position_id)
-        if not pos or pos.status != "open" or price <= 0:
+        # A sell at price 0 is valid (realizes the full loss); only reject
+        # missing/negative/non-finite prices.
+        if not pos or pos.status != "open" or not math.isfinite(price) or price < 0:
+            return None
+        if not math.isfinite(fraction):
             return None
         frac = max(0.0, min(1.0, float(fraction)))
         if frac <= 0:
@@ -176,15 +184,21 @@ class PaperPortfolio:
         cost_sold = pos.cost_usd * frac
         proceeds = shares_sold * price
         self.cash += proceeds
+        # Always move the realized chunk to a UNIQUE id so it can never be
+        # overwritten by a later re-open of the same market, nor collide with
+        # another sell in the same second.
+        sid = f"{position_id}#sold-{uuid.uuid4().hex[:8]}"
         if frac >= 0.999:
             pos.status = "sold"
             pos.payout_usd = proceeds
             pos.settled_ts = now
+            pos.id = sid
+            del self.positions[position_id]
+            self.positions[sid] = pos
             record = pos
         else:
             pos.shares -= shares_sold
             pos.cost_usd -= cost_sold
-            sid = f"{position_id}#sold-{int(now)}"
             record = PaperPosition(
                 id=sid, condition_id=pos.condition_id, asset=pos.asset, title=pos.title,
                 outcome=pos.outcome, signal_kind=pos.signal_kind, entry_price=pos.entry_price,
