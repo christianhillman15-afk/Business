@@ -74,6 +74,12 @@ class DetectionConfig:
     # suppress repeat alerts for the same (market, outcome, signal) within this
     # many minutes, to cut noise (0 = off)
     alert_cooldown_minutes: float = 10.0
+    # bearish: flag whale dumps (large SELLs) at/above this USDC (0 = off)
+    large_sell_usd: float = 5_000.0
+    # arbitrage: flag markets where YES+NO best prices sum below (1 - edge)
+    arbitrage_enabled: bool = True
+    arbitrage_min_edge: float = 0.02
+    arbitrage_check_minutes: float = 5.0
     accumulation: AccumulationConfig = field(default_factory=AccumulationConfig)
     coordinated: CoordinatedConfig = field(default_factory=CoordinatedConfig)
     watchlist: WatchlistConfig = field(default_factory=WatchlistConfig)
@@ -105,12 +111,31 @@ class DailySummaryConfig:
 
 
 @dataclass
+class BackupConfig:
+    """Send the state + ledger to Telegram daily so it survives a droplet loss."""
+
+    enabled: bool = True
+    hour_utc: int = 13
+
+
+@dataclass
+class HeartbeatConfig:
+    """Tell the operator when the bot starts and when errors spike."""
+
+    enabled: bool = True
+    startup_ping: bool = True
+    error_threshold: int = 5  # consecutive failed cycles before alerting
+
+
+@dataclass
 class NotificationsConfig:
     console: bool = True
     file: FileNotifyConfig = field(default_factory=FileNotifyConfig)
     webhook: WebhookNotifyConfig = field(default_factory=WebhookNotifyConfig)
     telegram: TelegramNotifyConfig = field(default_factory=TelegramNotifyConfig)
     daily_summary: DailySummaryConfig = field(default_factory=DailySummaryConfig)
+    backup: BackupConfig = field(default_factory=BackupConfig)
+    heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
 
 
 @dataclass
@@ -136,6 +161,26 @@ class FollowConfig:
     private_key_env: str = "POLYMARKET_PRIVATE_KEY"
     funder_env: str = "POLYMARKET_FUNDER"  # proxy/funder address (optional)
     chain_id: int = 137
+
+
+@dataclass
+class ExitsConfig:
+    """Automated exits so we don't only hold to resolution."""
+
+    enabled: bool = True
+    take_profit_pct: float = 0.5   # sell once up this % vs entry (0 = off)
+    stop_loss_pct: float = 0.5     # sell once down this % vs entry (0 = off)
+    follow_whale_out: bool = True  # sell if a whale dumps the outcome we hold
+    exit_on_sell_usd: float = 5_000.0  # any sell this big triggers follow-out
+    max_hold_hours: float = 0.0    # time-stop (0 = off)
+    check_interval_minutes: float = 3.0
+
+
+@dataclass
+class BenchmarkConfig:
+    """Run a shadow 'follow everything' book to prove the filters add value."""
+
+    enabled: bool = True
 
 
 @dataclass
@@ -193,6 +238,8 @@ class PaperConfig:
     commands_dir: str = "./paper_commands"
     smart_money: SmartMoneyConfig = field(default_factory=SmartMoneyConfig)
     fills: FillModelConfig = field(default_factory=FillModelConfig)
+    exits: ExitsConfig = field(default_factory=ExitsConfig)
+    benchmark: BenchmarkConfig = field(default_factory=BenchmarkConfig)
 
 
 @dataclass

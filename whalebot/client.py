@@ -182,6 +182,30 @@ class PolymarketClient:
         hist = raw.get("history") if isinstance(raw, dict) else None
         return hist if isinstance(hist, list) else []
 
+    def fetch_price(self, token_id: str, side: str) -> float | None:
+        """Best price to buy (side='buy'=ask) or sell (side='sell'=bid) a token."""
+        if not token_id:
+            return None
+        try:
+            raw = self._get(
+                f"{self.clob_api}/price", params={"token_id": token_id, "side": side}
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        if isinstance(raw, dict) and "price" in raw:
+            try:
+                return float(raw["price"])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def fetch_market_token_ids(self, condition_id: str) -> list:
+        """The outcome token ids (YES/NO) for an active market, for arb checks."""
+        m = self.fetch_market(condition_id, include_closed=False)
+        if not m:
+            return []
+        return _parse_json_list(m.get("clobTokenIds"))
+
     def fetch_market(
         self, condition_id: str, include_closed: bool = True
     ) -> dict[str, Any] | None:

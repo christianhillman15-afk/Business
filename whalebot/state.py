@@ -25,6 +25,8 @@ class State:
         self.follow_spend: dict[str, float] = {}
         # opaque blob owned by the paper portfolio
         self.paper: dict[str, Any] = {}
+        # shadow "follow everything" book for the A/B benchmark
+        self.paper_baseline: dict[str, Any] = {}
         # wallet (lowercased) -> aggregated "suspect" stats we've observed
         self.suspects: dict[str, dict] = {}
         # ids of manual buy/sell commands already applied (idempotency)
@@ -42,6 +44,7 @@ class State:
             self.seen = {k: float(v) for k, v in data.get("seen", {}).items()}
             self.follow_spend = {k: float(v) for k, v in data.get("follow_spend", {}).items()}
             self.paper = data.get("paper", {}) or {}
+            self.paper_baseline = data.get("paper_baseline", {}) or {}
             self.suspects = data.get("suspects", {}) or {}
             self.applied_commands = list(data.get("applied_commands", []) or [])
             self.last_settle_ts = float(data.get("last_settle_ts", 0.0))
@@ -54,6 +57,7 @@ class State:
             "seen": self.seen,
             "follow_spend": self.follow_spend,
             "paper": self.paper,
+            "paper_baseline": self.paper_baseline,
             "suspects": self.suspects,
             "applied_commands": self.applied_commands[-1000:],
             "last_settle_ts": self.last_settle_ts,

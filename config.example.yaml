@@ -24,6 +24,10 @@ detection:
   large_trade_usd: 1000     # flag any single buy at/above this USDC notional
   min_price: 0.0            # ignore aggressive buys below this price (0 = off)
   alert_cooldown_minutes: 10  # suppress repeat alerts for the same market/outcome (0 = off)
+  large_sell_usd: 5000      # bearish: flag whale dumps (large SELLs) at/above this (0 = off)
+  arbitrage_enabled: true   # flag markets where YES+NO best prices sum below $1
+  arbitrage_min_edge: 0.02  # minimum locked profit/share to alert
+  arbitrage_check_minutes: 5
 
   accumulation:             # one wallet quietly building a position
     enabled: true
@@ -56,6 +60,13 @@ notifications:
   daily_summary:            # once-a-day recap (equity, win rate, top whales)
     enabled: true
     hour_utc: 13            # sent after this UTC hour each day
+  backup:                   # send state+ledger to Telegram daily (off-droplet backup)
+    enabled: true
+    hour_utc: 13
+  heartbeat:                # startup ping + alert if cycles keep failing
+    enabled: true
+    startup_ping: true
+    error_threshold: 5
 
 # ── Paper trading ("demo account") ───────────────────────────────────────
 # Fake-money tracker so you can measure whether the signals actually win
@@ -89,6 +100,18 @@ paper:
     enabled: true
     spread_bps: 100
     fee_bps: 0
+  # ── Automated exits (don't only hold to resolution) ──
+  exits:
+    enabled: true
+    take_profit_pct: 0.5      # sell once up 50% vs entry (0 = off)
+    stop_loss_pct: 0.5        # sell once down 50% vs entry (0 = off)
+    follow_whale_out: true    # sell if a whale dumps the outcome we hold
+    exit_on_sell_usd: 5000    # any sell this big triggers a follow-out
+    max_hold_hours: 0         # time-stop (0 = off)
+    check_interval_minutes: 3
+  # ── A/B benchmark: shadow "follow everything" book to prove the filters help ──
+  benchmark:
+    enabled: true
 
 # ── Live following (OFF by default) ──────────────────────────────────────
 # Actually place real orders that follow the whale. Keep dry_run: true until

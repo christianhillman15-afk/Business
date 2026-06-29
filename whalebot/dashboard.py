@@ -306,6 +306,42 @@ def _category(title: str, slug: str) -> str:
     return "Other"
 
 
+def _equity_curve(closed, starting: float) -> list:
+    """Realized balance over time: starting + cumulative settled PnL."""
+    s = sorted([p for p in closed if p.settled_ts], key=lambda p: p.settled_ts)
+    if not s:
+        return []
+    curve = [{"t": int(s[0].settled_ts) - 1, "equity": round(starting, 2)}]
+    running = 0.0
+    for p in s:
+        running += p.pnl
+        curve.append({"t": int(p.settled_ts), "equity": round(starting + running, 2)})
+    return curve
+
+
+def _benchmark(state, cfg) -> dict | None:
+    """Compare the live (filtered) book against a 'follow everything' baseline."""
+    if not cfg.paper.benchmark.enabled:
+        return None
+    real = PaperPortfolio(cfg.paper, state.paper)
+    base = PaperPortfolio(cfg.paper, state.paper_baseline)
+    start = cfg.paper.starting_balance
+
+    def summary(pf):
+        closed = [p for p in pf.positions.values() if p.status in ("won", "lost", "sold")]
+        st = pf.stats()
+        return {
+            "win_rate": st["win_rate"],
+            "roi": st["roi"],
+            "realized_pnl": st["realized_pnl"],
+            "equity": st["equity"],
+            "settled": st["settled_trades"],
+            "curve": _equity_curve(closed, start),
+        }
+
+    return {"real": summary(real), "base": summary(base)}
+
+
 def _breakdown(closed) -> dict:
     """Group settled positions by signal type and by category for win rates."""
     from collections import defaultdict
@@ -454,6 +490,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
         "stats": stats,
         "history": _history_stats(closed_pos, cfg.paper.starting_balance, time.time()),
         "breakdown": _breakdown(closed_pos),
+        "benchmark": _benchmark(state, cfg),
         "open_positions": open_rows,
         "settled_positions": [settled_dict(p) for p in closed_pos][:50],
         "alerts": _tail_jsonl(cfg.notifications.file.path, cfg.dashboard.recent_alerts),
@@ -735,6 +772,10 @@ PAGE = r"""<!doctype html>
   .pill.won,.pill.up{ background:var(--green-bg); color:var(--green); }
   .pill.lost,.pill.down{ background:var(--red-bg); color:var(--red); }
   .pill.sold{ background:#2a2f10; color:#ffd27a; }
+  .pill.dump{ background:#3a1620; color:#ff8ba0; }
+  .pill.arbitrage{ background:#10233b; color:#8fd0ff; }
+  .legend{ display:flex; gap:16px; font-size:12px; color:var(--muted); margin:6px 2px 10px; }
+  .legend .k{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
   .empty{ color:var(--dim); padding:34px 16px; text-align:center; font-style:italic; }
   footer{ text-align:center; color:var(--dim); font-size:12px; padding:28px 16px 8px; }
   tr.clickrow{ cursor:pointer; }
@@ -861,6 +902,16 @@ PAGE = r"""<!doctype html>
     <div class="tablecard" id="bdSignal"></div>
     <div class="section-title">Win rate by market category</div>
     <div class="tablecard" id="bdCategory"></div>
+    <div id="bmWrap" style="display:none">
+      <div class="section-title">Your strategy vs. "follow everything"</div>
+      <div class="cards" id="bmCards"></div>
+      <div class="section-title">Balance over time (realized)</div>
+      <div class="legend">
+        <span><span class="k" style="background:#34d399"></span>Your strategy</span>
+        <span><span class="k" style="background:#8b9bbd"></span>Follow everything</span>
+      </div>
+      <div class="chartwrap" id="eqChart"></div>
+    </div>
   </div>
   <div class="panel" id="suspects">
     <div class="ivbar wrapbar" id="suspectCats">
@@ -1020,6 +1071,24 @@ function render(d){
     'Nothing settled yet.') : '<div class="empty">Nothing settled yet.</div>';
   document.getElementById('bdSignal').innerHTML = bdRows(bd.by_signal||[]);
   document.getElementById('bdCategory').innerHTML = bdRows(bd.by_category||[]);
+
+  // A/B benchmark: strategy vs follow-everything
+  const bm = d.benchmark;
+  const bmWrap = document.getElementById('bmWrap');
+  if(bm){
+    bmWrap.style.display='';
+    const edge = (bm.real.roi - bm.base.roi);
+    document.getElementById('bmCards').innerHTML =
+      card('Your ROI', pct(bm.real.roi), signClass(bm.real.roi), 'green', bm.real.settled+' settled') +
+      card('Baseline ROI', pct(bm.base.roi), signClass(bm.base.roi), 'blue', 'follow everything') +
+      card('Filter edge', (edge>=0?'+':'')+(edge*100).toFixed(1)+' pts', signClass(edge), edge>=0?'green':'red', 'ROI vs baseline') +
+      card('Your win rate', (bm.real.win_rate*100).toFixed(0)+'%', '', 'teal') +
+      card('Baseline win rate', (bm.base.win_rate*100).toFixed(0)+'%', '', 'amber') +
+      card('Your realized', money(bm.real.realized_pnl), signClass(bm.real.realized_pnl), bm.real.realized_pnl>=0?'green':'red');
+    drawEquity(document.getElementById('eqChart'), bm.real.curve||[], bm.base.curve||[]);
+  } else {
+    bmWrap.style.display='none';
+  }
 
   // current positions
   const op = d.open_positions;
@@ -1251,6 +1320,27 @@ function drawChart(box, pts){
     tip.innerHTML=`<b>${d.p.toFixed(3)}</b><br>${dt.toLocaleString()}`;
   });
   cover.addEventListener('mouseleave', ()=>{ cx.style.display='none'; cdot.style.display='none'; tip.style.display='none'; });
+}
+
+// ---------- equity chart (two realized-balance lines over time) ----------
+function drawEquity(box, real, base){
+  const series=[real||[], base||[]].filter(s=>s.length);
+  if(!series.length){ box.innerHTML='<div class="empty">No settled trades yet — the chart fills in as bets resolve.</div>'; return; }
+  const W=680,H=240,pl=52,pr=14,pt=12,pb=24;
+  const all=[].concat(real||[], base||[]);
+  const ts=all.map(p=>p.t), eq=all.map(p=>p.equity);
+  const tmin=Math.min(...ts), tmax=Math.max(...ts);
+  let lo=Math.min(...eq), hi=Math.max(...eq); const pad=Math.max(1,(hi-lo)*0.12); lo-=pad; hi+=pad;
+  const X=t=> pl+(W-pl-pr)*((t-tmin)/((tmax-tmin)||1));
+  const Y=v=> pt+(H-pt-pb)*(1-((v-lo)/((hi-lo)||1)));
+  const path=pts=> pts.map((d,i)=>(i?'L':'M')+X(d.t).toFixed(1)+' '+Y(d.equity).toFixed(1)).join(' ');
+  let grid='';
+  for(let k=0;k<=2;k++){ const val=lo+(hi-lo)*k/2,y=Y(val);
+    grid+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#1e2a44"/>
+           <text x="6" y="${y+4}" fill="#5d6e92" font-size="11">$${val.toFixed(0)}</text>`; }
+  const lines=(real&&real.length?`<path d="${path(real)}" fill="none" stroke="#34d399" stroke-width="2"/>`:'')
+            +(base&&base.length?`<path d="${path(base)}" fill="none" stroke="#8b9bbd" stroke-width="1.6" stroke-dasharray="4 3"/>`:'');
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}">${grid}${lines}</svg>`;
 }
 
 // ---------- suspects ----------

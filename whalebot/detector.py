@@ -57,6 +57,40 @@ class Detector:
         self._gc(now)
         return signals
 
+    def check_dumps(self, trades: list[Trade], now: float | None = None) -> list[Signal]:
+        """Bearish signal: flag large SELLs (whales dumping an outcome).
+
+        Alert-only — we don't auto-trade dumps, but a big sell is a warning that
+        smart money is exiting.
+        """
+        out: list[Signal] = []
+        if self.d.large_sell_usd <= 0:
+            return out
+        for tr in trades:
+            if tr.side != "SELL" or tr.notional < self.d.large_sell_usd:
+                continue
+            if self.f.condition_ids and tr.condition_id.lower() not in self.f.condition_ids:
+                continue
+            sev = "high" if tr.notional >= self.d.large_sell_usd * 2 else "medium"
+            out.append(
+                Signal(
+                    kind="dump",
+                    severity=sev,
+                    title=tr.title,
+                    outcome=tr.outcome,
+                    asset=tr.asset,
+                    condition_id=tr.condition_id,
+                    slug=tr.slug,
+                    event_slug=tr.event_slug,
+                    notional_usd=tr.notional,
+                    price=tr.price,
+                    message=f"whale SOLD ${tr.notional:,.0f} of '{tr.outcome}' @ {tr.price:.3f}",
+                    trades=[tr],
+                    wallets=[tr.wallet],
+                )
+            )
+        return out
+
     # -- filters -----------------------------------------------------------
     def _passes_filters(self, tr: Trade) -> bool:
         if self.f.sides and tr.side not in self.f.sides:

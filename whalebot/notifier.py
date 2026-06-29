@@ -67,6 +67,27 @@ class Notifier:
         except Exception as exc:  # noqa: BLE001
             log.warning("webhook post failed: %s", exc)
 
+    def send_document(self, path: str, caption: str = "") -> bool:
+        """Send a file to Telegram (off-droplet backup). Returns True on success."""
+        token = os.environ.get(self.cfg.telegram.bot_token_env, "")
+        chat_id = self.cfg.telegram.chat_id
+        if not self.cfg.telegram.enabled or not token or not chat_id:
+            return False
+        if not os.path.exists(path):
+            return False
+        try:
+            with open(path, "rb") as fh:
+                resp = requests.post(
+                    f"https://api.telegram.org/bot{token}/sendDocument",
+                    data={"chat_id": chat_id, "caption": caption[:1024]},
+                    files={"document": fh},
+                    timeout=30,
+                )
+            return resp.ok
+        except Exception as exc:  # noqa: BLE001
+            log.warning("telegram backup failed: %s", exc)
+            return False
+
     def _telegram(self, sig: Signal) -> None:
         self._post_telegram(f"🐋 {sig.summary()}")
 
