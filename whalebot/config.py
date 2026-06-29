@@ -71,6 +71,9 @@ class WatchlistConfig:
 class DetectionConfig:
     large_trade_usd: float = 5_000.0
     min_price: float = 0.0  # ignore aggressive buys below this price (0 = off)
+    # suppress repeat alerts for the same (market, outcome, signal) within this
+    # many minutes, to cut noise (0 = off)
+    alert_cooldown_minutes: float = 10.0
     accumulation: AccumulationConfig = field(default_factory=AccumulationConfig)
     coordinated: CoordinatedConfig = field(default_factory=CoordinatedConfig)
     watchlist: WatchlistConfig = field(default_factory=WatchlistConfig)
@@ -96,11 +99,18 @@ class TelegramNotifyConfig:
 
 
 @dataclass
+class DailySummaryConfig:
+    enabled: bool = True
+    hour_utc: int = 13  # send the daily recap around this UTC hour
+
+
+@dataclass
 class NotificationsConfig:
     console: bool = True
     file: FileNotifyConfig = field(default_factory=FileNotifyConfig)
     webhook: WebhookNotifyConfig = field(default_factory=WebhookNotifyConfig)
     telegram: TelegramNotifyConfig = field(default_factory=TelegramNotifyConfig)
+    daily_summary: DailySummaryConfig = field(default_factory=DailySummaryConfig)
 
 
 @dataclass
@@ -129,6 +139,22 @@ class FollowConfig:
 
 
 @dataclass
+class SmartMoneyConfig:
+    """Only follow whales with a track record, and don't chase price.
+
+    Whale quality (all-time PnL / win rate) comes from Polymarket and is cached.
+    If a whale's stats can't be fetched, we fail OPEN (allow the trade) so a
+    transient API hiccup never silently halts all trading.
+    """
+
+    enabled: bool = True
+    min_all_time_pnl: float = 0.0  # whale must be net up at least this much
+    min_win_rate: float = 0.0  # 0 = ignore (their win rate is approximate)
+    max_chase_slippage: float = 0.06  # skip if price already ran >6% past entry
+    cache_ttl_minutes: float = 360.0
+
+
+@dataclass
 class PaperConfig:
     """Paper-trading ('demo account') settings.
 
@@ -151,6 +177,7 @@ class PaperConfig:
     # directory the dashboard drops manual buy/sell commands into; the bot
     # consumes them each tick (single-writer: only the bot mutates the book).
     commands_dir: str = "./paper_commands"
+    smart_money: SmartMoneyConfig = field(default_factory=SmartMoneyConfig)
 
 
 @dataclass

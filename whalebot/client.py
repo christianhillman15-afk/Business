@@ -47,13 +47,17 @@ class PolymarketClient:
         taker_only: bool = True,
         condition_id: str | None = None,
         user: str | None = None,
+        offset: int = 0,
     ) -> list[Trade]:
         """Fetch the most recent trades from the Data API.
 
-        The feed is returned newest-first. Network/parse errors are logged and
-        swallowed (returns ``[]``) so a transient failure never kills the daemon.
+        The feed is returned newest-first. ``offset`` paginates further back.
+        Network/parse errors are logged and swallowed (returns ``[]``) so a
+        transient failure never kills the daemon.
         """
         params: dict[str, Any] = {"limit": limit, "takerOnly": str(taker_only).lower()}
+        if offset:
+            params["offset"] = offset
         if condition_id:
             params["market"] = condition_id
         if user:
@@ -197,6 +201,39 @@ class PolymarketClient:
             return None
         if isinstance(raw, list) and raw:
             return raw[0]
+        return None
+
+    def fetch_recent_closed_markets(self, limit: int = 40) -> list[dict]:
+        """Recently-closed, high-volume markets (for backtesting on known outcomes)."""
+        try:
+            raw = self._get(
+                f"{self.gamma_api}/markets",
+                params={
+                    "closed": "true",
+                    "limit": limit,
+                    "order": "volume",
+                    "ascending": "false",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.debug("fetch_recent_closed_markets failed: %s", exc)
+            return []
+        return raw if isinstance(raw, list) else []
+
+    def winner_from_market(self, market: dict) -> str | None:
+        """Winning outcome name from a (closed) market dict, else None."""
+        if not market or not market.get("closed"):
+            return None
+        outcomes = _parse_json_list(market.get("outcomes"))
+        prices = _parse_json_list(market.get("outcomePrices"))
+        if not outcomes or len(outcomes) != len(prices):
+            return None
+        for name, price in zip(outcomes, prices):
+            try:
+                if float(price) >= 0.99:
+                    return str(name)
+            except (TypeError, ValueError):
+                continue
         return None
 
     def resolve_market(self, condition_id: str) -> str | None:

@@ -17,6 +17,7 @@ from .executor import Executor
 from .models import Signal
 from .notifier import Notifier
 from .paper import PaperPortfolio
+from .quality import WhaleQuality
 from .state import State
 
 log = logging.getLogger("whalebot.daemon")
@@ -35,6 +36,10 @@ class WhaleBot:
         self.notifier = Notifier(cfg.notifications)
         self.executor = Executor(cfg.follow, self.state, cfg.polymarket.clob_api)
         self.paper = PaperPortfolio(cfg.paper, self.state.paper)
+        self.quality = WhaleQuality(self.client, cfg.paper.smart_money)
+        # (market, outcome, kind) -> last alert ts, for cooldown throttling
+        self._alert_cooldown: dict[tuple, float] = {}
+        self._last_summary_day: str = ""
         self._running = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -116,6 +121,7 @@ class WhaleBot:
 
         self._process_commands()
         self._maybe_settle()
+        self._maybe_daily_summary()
 
         # persist + housekeeping
         self.state.prune()
@@ -123,7 +129,16 @@ class WhaleBot:
         self.state.save()
 
     def _handle_signal(self, sig: Signal) -> None:
+        # Throttle repeat alerts for the same market/outcome/signal.
+        if self._alert_suppressed(sig):
+            return
         self.notifier.send(sig)
+
+        # Smart-money gate: only follow whales with a track record, don't chase.
+        ok, reason = self.quality.passes(sig)
+        if not ok:
+            log.info("⏭️  skip '%s' (%s): %s", sig.outcome, sig.title, reason)
+            return
 
         pos = self.paper.maybe_buy(sig)
         if pos is not None:
@@ -139,6 +154,24 @@ class WhaleBot:
 
         # live/dry-run follow (independent of paper trading)
         self.executor.maybe_follow(sig)
+
+    def _alert_suppressed(self, sig: Signal) -> bool:
+        cooldown = self.cfg.detection.alert_cooldown_minutes * 60.0
+        if cooldown <= 0:
+            return False
+        key = (sig.condition_id, sig.outcome, sig.kind)
+        now = time.time()
+        last = self._alert_cooldown.get(key, 0.0)
+        if now - last < cooldown:
+            return True
+        self._alert_cooldown[key] = now
+        # opportunistic cleanup so the dict can't grow unbounded
+        if len(self._alert_cooldown) > 5000:
+            cutoff = now - cooldown
+            self._alert_cooldown = {
+                k: t for k, t in self._alert_cooldown.items() if t >= cutoff
+            }
+        return False
 
     def _process_commands(self) -> None:
         """Apply manual buy/sell commands the dashboard dropped in commands_dir.
@@ -234,6 +267,32 @@ class WhaleBot:
             os.remove(path)
         except OSError:
             pass
+
+    def _maybe_daily_summary(self) -> None:
+        cfg = self.cfg.notifications.daily_summary
+        if not cfg.enabled:
+            return
+        tm = time.gmtime()
+        day = time.strftime("%Y-%m-%d", tm)
+        if tm.tm_hour < cfg.hour_utc or self._last_summary_day == day:
+            return
+        self._last_summary_day = day
+        s = self.paper.stats()
+        top = sorted(
+            self.state.suspects.items(),
+            key=lambda kv: kv[1].get("usd", 0.0),
+            reverse=True,
+        )[:3]
+        whales = ", ".join(f"{w[:8]}… (${r.get('usd', 0):,.0f})" for w, r in top) or "none yet"
+        msg = (
+            f"📅 Whale Bot daily — {day}\n"
+            f"Equity ${s['equity']:,.2f} (ROI {s['roi'] * 100:+.1f}%) · "
+            f"win rate {s['win_rate'] * 100:.0f}% ({s['wins']}W/{s['losses']}L) · "
+            f"realized ${s['realized_pnl']:,.2f}\n"
+            f"Open {s['open_positions']} · cash ${s['cash']:,.2f}\n"
+            f"Top whales: {whales}"
+        )
+        self.notifier.info(msg)
 
     def _maybe_settle(self) -> None:
         if not self.cfg.paper.enabled:

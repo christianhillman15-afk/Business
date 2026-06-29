@@ -6,6 +6,7 @@ config.yaml
 *.jsonl
 whalebot_state.json
 whalebot_state.json.tmp
+paper_commands/
 
 # python
 __pycache__/

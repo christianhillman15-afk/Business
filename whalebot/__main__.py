@@ -5,6 +5,7 @@ Commands:
   dashboard start the web dashboard (browser view of the paper account)
   report    print the current paper-account stats and exit
   settle    force a one-off settlement pass against market resolutions
+  backtest  replay recent historical trades to estimate the strategy's edge
   test      do a single poll cycle and exit (smoke test / cron-friendly)
 """
 
@@ -42,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         nargs="?",
         default="run",
-        choices=["run", "dashboard", "report", "settle", "test"],
+        choices=["run", "dashboard", "report", "settle", "backtest", "test"],
     )
     parser.add_argument("-c", "--config", default="config.yaml", help="path to config YAML")
     args = parser.parse_args(argv)
@@ -76,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
         bot.state.paper = bot.paper.to_blob()
         bot.state.save()
         print(bot.paper.report())
+    elif args.command == "backtest":
+        from .backtest import env_markets, print_report, run_backtest
+
+        print_report(run_backtest(cfg, markets_n=env_markets()))
     elif args.command == "test":
         bot.tick()
         print(bot.paper.report())

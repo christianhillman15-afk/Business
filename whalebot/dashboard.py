@@ -290,6 +290,55 @@ def build_suspects(state) -> list[dict]:
     return out
 
 
+def _category(title: str, slug: str) -> str:
+    """Best-effort market category from the title/slug (heuristic)."""
+    t = f"{title} {slug}".lower()
+    if any(k in t for k in ("updown", "bitcoin", "ethereum", " btc", " eth", "solana", "dogecoin", " up or down")):
+        return "Crypto"
+    if any(k in t for k in (" vs.", " vs ", "fifwc", "nba", "mlb", "nfl", "nhl", "ucl",
+                            "match", "o/u", "spread", "win on", "world cup", "super bowl",
+                            "premier league", "champions", "playoff", "f1", "grand prix")):
+        return "Sports"
+    if any(k in t for k in ("president", "election", "senate", "congress", "governor",
+                            "primary", "nominee", "nomination", "prime minister", "parliament",
+                            "referendum", "impeach")):
+        return "Politics"
+    return "Other"
+
+
+def _breakdown(closed) -> dict:
+    """Group settled positions by signal type and by category for win rates."""
+    from collections import defaultdict
+
+    def group(keyfn):
+        buckets: dict[str, dict] = defaultdict(lambda: {"wins": 0, "losses": 0, "pnl": 0.0})
+        for p in closed:
+            b = buckets[keyfn(p)]
+            b["pnl"] += p.pnl
+            if p.status == "won":
+                b["wins"] += 1
+            elif p.status == "lost":
+                b["losses"] += 1
+        rows = []
+        for name, b in buckets.items():
+            resolved = b["wins"] + b["losses"]
+            rows.append({
+                "name": name,
+                "resolved": resolved,
+                "wins": b["wins"],
+                "losses": b["losses"],
+                "win_rate": round(b["wins"] / resolved, 4) if resolved else None,
+                "pnl": round(b["pnl"], 2),
+            })
+        rows.sort(key=lambda r: r["pnl"], reverse=True)
+        return rows
+
+    return {
+        "by_signal": group(lambda p: p.signal_kind or "unknown"),
+        "by_category": group(lambda p: _category(p.title, p.event_slug or p.slug)),
+    }
+
+
 def _market_url(event_slug: str, slug: str) -> str:
     """Build a polymarket.com link from a market's slug (best-effort)."""
     s = (event_slug or slug or "").strip()
@@ -403,6 +452,7 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
     return {
         "stats": stats,
         "history": _history_stats(closed_pos, cfg.paper.starting_balance, time.time()),
+        "breakdown": _breakdown(closed_pos),
         "open_positions": open_rows,
         "settled_positions": [settled_dict(p) for p in closed_pos][:50],
         "alerts": _tail_jsonl(cfg.notifications.file.path, cfg.dashboard.recent_alerts),
@@ -806,6 +856,10 @@ PAGE = r"""<!doctype html>
     <div class="cards" id="histTime"></div>
     <div class="section-title">Trade stats</div>
     <div class="cards" id="histStats"></div>
+    <div class="section-title">Win rate by signal type</div>
+    <div class="tablecard" id="bdSignal"></div>
+    <div class="section-title">Win rate by market category</div>
+    <div class="tablecard" id="bdCategory"></div>
   </div>
   <div class="panel" id="suspects">
     <div class="ivbar wrapbar" id="suspectCats">
@@ -954,6 +1008,17 @@ function render(d){
       card('Current streak', streak, h.streak_type==='W'?'pos':(h.streak_type==='L'?'neg':''), 'amber') +
       card('Total wagered', money(h.total_wagered), '', 'blue', h.total_settled+' bets');
   }
+  // breakdown tables (win rate by signal / category)
+  const bd = d.breakdown||{by_signal:[],by_category:[]};
+  const bdRows = rows => rows.length ? wrapTable(
+    `<th>Group</th><th class="num">Resolved</th><th class="num">W/L</th><th class="num">Win rate</th><th class="num">PnL</th>`,
+    rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="num">${r.resolved}</td>
+      <td class="num">${r.wins}/${r.losses}</td>
+      <td class="num">${r.win_rate==null?'—':(r.win_rate*100).toFixed(0)+'%'}</td>
+      <td class="num ${signClass(r.pnl)}">${money(r.pnl)}</td></tr>`).join(''),
+    'Nothing settled yet.') : '<div class="empty">Nothing settled yet.</div>';
+  document.getElementById('bdSignal').innerHTML = bdRows(bd.by_signal||[]);
+  document.getElementById('bdCategory').innerHTML = bdRows(bd.by_category||[]);
 
   // current positions
   const op = d.open_positions;

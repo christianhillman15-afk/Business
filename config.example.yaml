@@ -23,6 +23,7 @@ detection:
   # accumulation.min_total_usd: 10000, coordinated.min_wallets: 4).
   large_trade_usd: 1000     # flag any single buy at/above this USDC notional
   min_price: 0.0            # ignore aggressive buys below this price (0 = off)
+  alert_cooldown_minutes: 10  # suppress repeat alerts for the same market/outcome (0 = off)
 
   accumulation:             # one wallet quietly building a position
     enabled: true
@@ -52,6 +53,9 @@ notifications:
     enabled: false
     bot_token_env: TELEGRAM_BOT_TOKEN
     chat_id: ""
+  daily_summary:            # once-a-day recap (equity, win rate, top whales)
+    enabled: true
+    hour_utc: 13            # sent after this UTC hour each day
 
 # ── Paper trading ("demo account") ───────────────────────────────────────
 # Fake-money tracker so you can measure whether the signals actually win
@@ -68,6 +72,15 @@ paper:
   settle_interval_minutes: 30
   # dashboard drops manual buy/sell orders here; the bot applies them each cycle
   commands_dir: ./paper_commands
+  # ── Smart-money filter ──
+  # Only paper-follow whales with a track record, and don't chase price that
+  # already moved. Fails OPEN if a whale's stats can't be fetched.
+  smart_money:
+    enabled: true
+    min_all_time_pnl: 0     # whale must be net up at least this much all-time
+    min_win_rate: 0.0       # 0 = ignore (their win rate is approximate)
+    max_chase_slippage: 0.06  # skip if price already ran >6% past the whale's entry
+    cache_ttl_minutes: 360
 
 # ── Live following (OFF by default) ──────────────────────────────────────
 # Actually place real orders that follow the whale. Keep dry_run: true until
