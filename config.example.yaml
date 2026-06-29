@@ -1,0 +1,152 @@
+# Polymarket whale-bot configuration.
+# Copy this to `config.yaml` and tune. Secrets are NOT stored here — they come
+# from environment variables / a .env file (see .env.example).
+
+polymarket:
+  data_api: https://data-api.polymarket.com
+  gamma_api: https://gamma-api.polymarket.com
+  clob_api: https://clob.polymarket.com
+
+poll:
+  interval_seconds: 15      # how often to pull the trade feed
+  trades_per_poll: 500      # how many recent trades to fetch each poll
+  taker_only: true          # only count aggressive (taker) fills
+
+filters:
+  condition_ids: []         # restrict to these markets (empty = ALL markets)
+  sides: [BUY]              # which sides are "suspicious" (BUY = buying pressure)
+
+detection:
+  # ── "More sensitive" preset ──
+  # Lower numbers = more alerts / faster win-rate data (and more noise).
+  # For higher-conviction-only alerts, raise these (e.g. large_trade_usd: 5000,
+  # accumulation.min_total_usd: 10000, coordinated.min_wallets: 4).
+  large_trade_usd: 1000     # flag any single buy at/above this USDC notional
+  min_price: 0.0            # ignore aggressive buys below this price (0 = off)
+  alert_cooldown_minutes: 10  # suppress repeat alerts for the same market/outcome (0 = off)
+  large_sell_usd: 5000      # bearish: flag whale dumps (large SELLs) at/above this (0 = off)
+  arbitrage_enabled: true   # flag markets where YES+NO best prices sum below $1
+  arbitrage_min_edge: 0.02  # minimum locked profit/share to alert
+  arbitrage_check_minutes: 5
+
+  accumulation:             # one wallet quietly building a position
+    enabled: true
+    window_minutes: 30
+    min_total_usd: 3000
+    min_trades: 2
+
+  coordinated:              # many wallets piling into the same outcome fast
+    enabled: true
+    window_minutes: 10
+    min_wallets: 3
+    min_total_usd: 5000
+
+  watchlist:                # always alert on these wallets (known whales)
+    wallets: []             # e.g. ["0xabc...", "0xdef..."]
+    min_usd: 500
+
+notifications:
+  console: true
+  file:
+    enabled: true
+    path: ./alerts.jsonl
+  webhook:                  # Discord/Slack-compatible incoming webhook
+    enabled: false
+    url_env: WHALEBOT_WEBHOOK_URL   # set the URL in this env var
+  telegram:
+    enabled: false
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    chat_id: ""
+  daily_summary:            # once-a-day recap (equity, win rate, top whales)
+    enabled: true
+    hour_utc: 13            # sent after this UTC hour each day
+  backup:                   # send state+ledger to Telegram daily (off-droplet backup)
+    enabled: true
+    hour_utc: 13
+  heartbeat:                # startup ping + alert if cycles keep failing
+    enabled: true
+    startup_ping: true
+    error_threshold: 5
+
+# ── Paper trading ("demo account") ───────────────────────────────────────
+# Fake-money tracker so you can measure whether the signals actually win
+# BEFORE risking real funds. Auto-"buys" flagged outcomes and settles them
+# against real market resolutions to compute a win rate.
+paper:
+  enabled: true
+  starting_balance: 1000    # fake USDC bankroll
+  stake_usd: 50             # fake $ committed per flagged trade
+  max_position_usd: 200     # cap exposure per market outcome
+  max_price: 0.97           # don't paper-buy near-certain outcomes
+  trigger_signals: [large_trade, accumulation, coordinated, watchlist]
+  ledger_path: ./paper_ledger.jsonl
+  settle_interval_minutes: 30
+  # dashboard drops manual buy/sell orders here; the bot applies them each cycle
+  commands_dir: ./paper_commands
+  # ── Smart-money filter ──
+  # Only paper-follow whales with a track record, and don't chase price that
+  # already moved. Fails OPEN if a whale's stats can't be fetched.
+  smart_money:
+    enabled: true
+    min_all_time_pnl: 0     # whale must be net up at least this much all-time
+    min_win_rate: 0.0       # 0 = ignore (their win rate is approximate)
+    max_chase_slippage: 0.06  # skip if price already ran >6% past the whale's entry
+    cache_ttl_minutes: 360
+  # ── Realistic fills ──
+  # You never trade at the mid: buys cross the spread up, sells/valuation down,
+  # plus an optional fee. Keeps the paper win rate honest. Set spread_bps to
+  # match how liquid your markets are (100 = 1% each way).
+  fills:
+    enabled: true
+    spread_bps: 100
+    fee_bps: 0
+  # ── Automated exits (don't only hold to resolution) ──
+  exits:
+    enabled: true
+    take_profit_pct: 0.5      # sell once up 50% vs entry (0 = off)
+    stop_loss_pct: 0.5        # sell once down 50% vs entry (0 = off)
+    follow_whale_out: true    # sell if a whale dumps the outcome we hold
+    exit_on_sell_usd: 5000    # any sell this big triggers a follow-out
+    max_hold_hours: 0         # time-stop (0 = off)
+    check_interval_minutes: 3
+  # ── A/B benchmark: shadow "follow everything" book to prove the filters help ──
+  benchmark:
+    enabled: true
+
+# ── Live following (OFF by default) ──────────────────────────────────────
+# Actually place real orders that follow the whale. Keep dry_run: true until
+# you fully trust the signals. Requires py-clob-client + a funded wallet.
+follow:
+  enabled: false
+  dry_run: true             # true = log the order but DON'T send it
+  trigger_signals: [large_trade, accumulation, watchlist]
+  sizing:
+    mode: fixed             # fixed | percent
+    fixed_usd: 50
+    percent_of_whale: 1.0   # used when mode = percent
+    max_usd: 200
+  max_price: 0.95
+  order_type: GTC           # GTC | FOK
+  daily_max_usd: 1000       # hard safety cap on follow spend per day
+  private_key_env: POLYMARKET_PRIVATE_KEY
+  funder_env: POLYMARKET_FUNDER
+  chain_id: 137
+
+# ── Web dashboard ────────────────────────────────────────────────────────
+# A browser page showing your paper account, open positions, and recent whale
+# alerts. Runs on the same server (no extra cost). Set a `token` to keep it
+# private — then only people with the link http://YOUR_IP:8080/?token=THE_TOKEN
+# can view it. Leave token empty for no lock (only fake-money data is shown).
+dashboard:
+  host: 0.0.0.0
+  port: 8080
+  token: ""                 # set to a long random string to make it private
+  recent_alerts: 50
+  refresh_seconds: 15
+
+state:
+  path: ./whalebot_state.json
+  dedup_ttl_minutes: 120
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR

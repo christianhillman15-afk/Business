@@ -1,0 +1,13 @@
+services:
+  whalebot:
+    build: .
+    container_name: whalebot
+    restart: unless-stopped          # auto-restart on crash or reboot
+    env_file:
+      - .env                          # secrets (webhook/telegram/keys)
+    volumes:
+      # Bind-mount the project dir so config.yaml is read and the paper ledger,
+      # state file, and alerts.jsonl all persist on the host across restarts.
+      - ./:/app
+    working_dir: /app
+    command: ["python", "-m", "whalebot", "run", "-c", "config.yaml"]
