@@ -23,10 +23,31 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .config import PaperConfig
+from .config import FillModelConfig, PaperConfig
 from .models import Signal
 
 log = logging.getLogger("whalebot.paper")
+
+
+# -- realistic fill helpers (you never trade at the mid) --------------------
+def buy_fill_price(price: float, fills: FillModelConfig) -> float:
+    """Effective price paid when buying (crosses the spread upward)."""
+    if not fills or not fills.enabled:
+        return price
+    return price * (1 + fills.spread_bps / 10_000.0)
+
+
+def sell_fill_price(price: float, fills: FillModelConfig) -> float:
+    """Effective price received when selling / valuing (below the mid)."""
+    if not fills or not fills.enabled:
+        return price
+    return max(0.0, price * (1 - fills.spread_bps / 10_000.0))
+
+
+def _fee(amount: float, fills: FillModelConfig) -> float:
+    if not fills or not fills.enabled:
+        return 0.0
+    return amount * fills.fee_bps / 10_000.0
 
 
 @dataclass
@@ -105,7 +126,10 @@ class PaperPortfolio:
         if stake <= 0:
             return None
 
-        shares = stake / sig.price
+        # Realistic fill: cross the spread + pay any fee, so we get fewer shares
+        # than a free mid-price fill would give.
+        fill = buy_fill_price(sig.price, self.cfg.fills)
+        shares = (stake - _fee(stake, self.cfg.fills)) / fill
         self.cash -= stake
 
         if existing and existing.status == "open":
@@ -128,7 +152,7 @@ class PaperPortfolio:
             title=sig.title,
             outcome=sig.outcome,
             signal_kind=sig.kind,
-            entry_price=sig.price,
+            entry_price=stake / shares if shares else sig.price,
             shares=shares,
             cost_usd=stake,
             opened_ts=now,
@@ -153,7 +177,8 @@ class PaperPortfolio:
         stake = min(float(usd), self.cash)
         if stake <= 0:
             return None
-        shares = stake / price
+        fill = buy_fill_price(price, self.cfg.fills)
+        shares = (stake - _fee(stake, self.cfg.fills)) / fill
         self.cash -= stake
         total_shares = pos.shares + shares
         pos.cost_usd += stake
@@ -182,7 +207,8 @@ class PaperPortfolio:
             return None
         shares_sold = pos.shares * frac
         cost_sold = pos.cost_usd * frac
-        proceeds = shares_sold * price
+        gross = shares_sold * sell_fill_price(price, self.cfg.fills)
+        proceeds = gross - _fee(gross, self.cfg.fills)
         self.cash += proceeds
         # Always move the realized chunk to a UNIQUE id so it can never be
         # overwritten by a later re-open of the same market, nor collide with

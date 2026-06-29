@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .client import PolymarketClient
 from .config import Config
-from .paper import PaperPortfolio
+from .paper import PaperPortfolio, sell_fill_price
 from .state import State
 
 log = logging.getLogger("whalebot.dashboard")
@@ -416,7 +416,8 @@ def build_snapshot(cfg: Config, client: PolymarketClient | None = None) -> dict:
     for p in open_pos:
         price = _cached_midpoint(client, p.asset)
         if price is not None:
-            cur_value = p.shares * price
+            # value at the realistic price we could actually sell into, not the mid
+            cur_value = p.shares * sell_fill_price(price, cfg.paper.fills)
             unreal = cur_value - p.cost_usd
             unrealized_total += unreal
             live_value_total += cur_value

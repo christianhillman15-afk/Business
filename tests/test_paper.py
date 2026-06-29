@@ -3,7 +3,7 @@
 import os
 import tempfile
 
-from whalebot.config import PaperConfig
+from whalebot.config import FillModelConfig, PaperConfig
 from whalebot.models import Signal
 from whalebot.paper import PaperPortfolio
 
@@ -34,6 +34,9 @@ def make_cfg(**over) -> PaperConfig:
         max_position_usd=200,
         ledger_path=path,
         trigger_signals=["large_trade"],
+        # these tests check the base accounting; disable the realistic-fill
+        # spread so the share/payout math is exact (fills tested separately)
+        fills=FillModelConfig(enabled=False),
     )
     for k, v in over.items():
         setattr(cfg, k, v)
@@ -100,6 +103,19 @@ def test_unresolved_market_not_settled():
     settled = pf.settle(resolver=lambda cid: None)
     assert settled == []
     assert pf.stats()["settled_trades"] == 0
+
+
+def test_realistic_fills_cost_the_spread():
+    # 1% each way: buying $50 at price 0.5 fills above mid -> fewer shares,
+    # and an immediate sell at the same mid loses ~2% round-trip.
+    cfg = make_cfg(fills=FillModelConfig(enabled=True, spread_bps=100, fee_bps=0))
+    pf = PaperPortfolio(cfg)
+    pos = pf.maybe_buy(make_signal(price=0.5))
+    assert pos.shares < 100  # fewer than the 100 a mid fill would give
+    assert abs(pos.entry_price - 0.505) < 1e-6
+    r = pf.manual_sell(pos.id, 1.0, 0.5)  # sell at the same mid
+    assert r.pnl < 0  # round-trip spread is a real cost
+    assert abs(r.pnl + 50 * 0.0199) < 0.05  # ~2% of $50
 
 
 def test_roundtrip_serialisation():

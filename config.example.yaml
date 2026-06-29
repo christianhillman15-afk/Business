@@ -81,6 +81,14 @@ paper:
     min_win_rate: 0.0       # 0 = ignore (their win rate is approximate)
     max_chase_slippage: 0.06  # skip if price already ran >6% past the whale's entry
     cache_ttl_minutes: 360
+  # ── Realistic fills ──
+  # You never trade at the mid: buys cross the spread up, sells/valuation down,
+  # plus an optional fee. Keeps the paper win rate honest. Set spread_bps to
+  # match how liquid your markets are (100 = 1% each way).
+  fills:
+    enabled: true
+    spread_bps: 100
+    fee_bps: 0
 
 # ── Live following (OFF by default) ──────────────────────────────────────
 # Actually place real orders that follow the whale. Keep dry_run: true until

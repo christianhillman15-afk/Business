@@ -139,6 +139,20 @@ class FollowConfig:
 
 
 @dataclass
+class FillModelConfig:
+    """Make paper fills realistic: you never trade at the mid price.
+
+    A buy crosses the spread (fills a bit above the quoted price) and a
+    sell/valuation fills a bit below, plus an optional fee. This keeps the paper
+    win rate honest so it's safe to base a real-money decision on.
+    """
+
+    enabled: bool = True
+    spread_bps: float = 100.0  # half-spread each way; 100 bps = 1% (≈2% round trip)
+    fee_bps: float = 0.0  # Polymarket trading fee (currently ~0)
+
+
+@dataclass
 class SmartMoneyConfig:
     """Only follow whales with a track record, and don't chase price.
 
@@ -178,6 +192,7 @@ class PaperConfig:
     # consumes them each tick (single-writer: only the bot mutates the book).
     commands_dir: str = "./paper_commands"
     smart_money: SmartMoneyConfig = field(default_factory=SmartMoneyConfig)
+    fills: FillModelConfig = field(default_factory=FillModelConfig)
 
 
 @dataclass
