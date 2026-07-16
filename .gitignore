@@ -19,6 +19,10 @@ out/
 npm-debug.log*
 yarn-error.log*
 
+# Build artifacts / generated deliverables
+leadpilot-demo.zip
+*.zip
+
 # Editor / OS
 .DS_Store
 .idea/
