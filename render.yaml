@@ -1,0 +1,73 @@
+# Render.com Blueprint — a starting point for hosting LeadPilot.
+# In the Render dashboard: New → Blueprint → point at this repo.
+# After it deploys, set the values marked `sync: false` (secrets + URLs).
+#
+# See docs/DEPLOY.md for the full walkthrough and the cross-service URL wiring.
+
+databases:
+  - name: leadpilot-db
+    databaseName: leadpilot
+    user: leadpilot
+    plan: free
+
+services:
+  # --- Backend API --------------------------------------------------------
+  - type: web
+    name: leadpilot-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leadpilot-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      # Set to your frontend's URL once it's deployed (e.g. https://leadpilot-frontend.onrender.com)
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        sync: false
+      # Public URL of THIS backend (e.g. https://leadpilot-backend.onrender.com).
+      # Used to build OAuth redirect URIs.
+      - key: OAUTH_REDIRECT_BASE
+        sync: false
+      # Optional — leave blank to use offline AI / mock billing.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # --- SMS (two-way texting bot) --------------------------------------
+      # Set SMS_BACKEND=twilio and fill the three Twilio values to send real
+      # texts. Point Twilio's inbound webhook at <backend>/api/sms/inbound.
+      - key: SMS_BACKEND
+        value: "console"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      # Keep live posting OFF until your Meta app is approved (see docs/COMPLIANCE.md).
+      - key: LEADPILOT_LIVE_CONNECTORS
+        value: "false"
+
+  # --- Frontend dashboard -------------------------------------------------
+  - type: web
+    name: leadpilot-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      # Must point at the backend URL. Also passed as a Docker build arg so the
+      # Next.js build inlines it (NEXT_PUBLIC_* is build-time).
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false

@@ -1,0 +1,1 @@
+"""LeadPilot backend application package."""

@@ -1,0 +1,15 @@
+# Netlify config for the clickable static demo.
+# "New site from Git" → pick this repo → deploy. No manual settings needed.
+# The site stays a static, in-browser demo (no backend); the repo stays private.
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "out"
+
+[build.environment]
+  # Build the frontend as a static export served from the domain root.
+  NEXT_PUBLIC_DEMO_MODE = "true"
+  NEXT_PUBLIC_BASE_PATH = ""
+  NEXT_PUBLIC_API_BASE_URL = ""
+  NODE_VERSION = "20"

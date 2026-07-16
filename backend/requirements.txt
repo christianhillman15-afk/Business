@@ -1,0 +1,21 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+SQLAlchemy==2.0.36
+pydantic==2.10.4
+pydantic-settings==2.7.0
+PyJWT==2.10.1
+python-multipart==0.0.20
+email-validator==2.2.0
+anthropic==0.69.0
+httpx==0.28.1
+cryptography==44.0.0
+argon2-cffi==23.1.0
+stripe==11.4.1
+APScheduler==3.11.0
+# PostgreSQL driver for production (DATABASE_URL=postgresql+psycopg://...).
+# Not used by the default SQLite dev setup.
+psycopg[binary]==3.2.3
+gunicorn==23.0.0
+alembic==1.14.0
+
+
